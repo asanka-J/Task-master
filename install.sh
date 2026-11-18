@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installs TaskMate as a background service that starts automatically when you log in.
-# Usage: bash install.sh                       (accessible from this PC + phone on same Wi-Fi)
-#        bash install.sh --local               (this PC only)
+# Usage: bash install.sh                       (this laptop only; the safe default)
+#        bash install.sh --lan                 (also allow your phone on the same Wi-Fi, with an access key)
+#        bash install.sh --local               (turn phone access off again)
 #        bash install.sh --repo owner/name     (get updates from that GitHub repo's releases)
 #        bash install.sh --update              (used by the updater; keeps your existing settings)
 set -e
@@ -9,20 +10,32 @@ PORT="${TASKMATE_PORT:-8765}"
 APP_DIR="$HOME/.local/share/taskmate"
 UNIT_DIR="$HOME/.config/systemd/user"
 CFG_DIR="$HOME/.config/taskmate"
-HOST=""; REPO=""; UPDATE=0
+HOST=""; REPO=""; UPDATE=0; LAN=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --local) HOST="127.0.0.1" ;;
+    --local) LAN=0 ;;
+    --lan) LAN=1 ;;
     --update) UPDATE=1 ;;
     --repo) REPO="$2"; shift ;;
   esac
   shift
 done
-# Keep the previous host setting unless told otherwise
-if [ -z "$HOST" ] && [ -f "$UNIT_DIR/taskmate.service" ]; then
-  HOST=$(sed -n 's/^Environment=TASKMATE_HOST=//p' "$UNIT_DIR/taskmate.service")
+mkdir -p "$CFG_DIR"; touch "$CFG_DIR/config"; chmod 600 "$CFG_DIR/config"
+set_cfg() {  # set_cfg KEY VALUE: replace or add a line in the config file
+  grep -v "^$1=" "$CFG_DIR/config" > "$CFG_DIR/config.tmp" || true
+  echo "$1=$2" >> "$CFG_DIR/config.tmp"; mv "$CFG_DIR/config.tmp" "$CFG_DIR/config"; chmod 600 "$CFG_DIR/config"
+}
+# Phone access is off unless asked for with --lan (remembered for updates)
+[ -n "$LAN" ] && set_cfg TASKMATE_LAN "$LAN"
+LAN=$(sed -n 's/^TASKMATE_LAN=//p' "$CFG_DIR/config" || true)
+if [ "$LAN" = 1 ]; then
+  HOST="0.0.0.0"
+  if ! grep -q '^TASKMATE_ACCESS_KEY=..' "$CFG_DIR/config"; then
+    set_cfg TASKMATE_ACCESS_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  fi
+else
+  HOST="127.0.0.1"
 fi
-HOST="${HOST:-0.0.0.0}"
 
 mkdir -p "$APP_DIR" "$UNIT_DIR" "$CFG_DIR"
 SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -30,11 +43,7 @@ cp "$SRC/taskmate.py" "$SRC/page.html" "$SRC/taskmate_indicator.py" "$SRC/taskma
    "$SRC/taskmate_window.py" "$SRC/icon.svg" "$SRC/icon-app.svg" "$SRC/VERSION" "$APP_DIR/"
 cp "$SRC/install.sh" "$SRC/uninstall.sh" "$APP_DIR/" 2>/dev/null || true
 
-if [ -n "$REPO" ]; then
-  touch "$CFG_DIR/config"; chmod 600 "$CFG_DIR/config"
-  grep -v '^TASKMATE_REPO=' "$CFG_DIR/config" > "$CFG_DIR/config.tmp" || true
-  echo "TASKMATE_REPO=$REPO" >> "$CFG_DIR/config.tmp"; mv "$CFG_DIR/config.tmp" "$CFG_DIR/config"
-fi
+[ -n "$REPO" ] && set_cfg TASKMATE_REPO "$REPO"
 
 # System packages: top-bar icon (AppIndicator) and the app window (WebKitGTK)
 PKGS=""
@@ -118,10 +127,11 @@ echo "  Open it from the app grid (TaskMate) or the top-bar icon."
 echo "  In a browser: http://localhost:$PORT"
 if [ "$HOST" = "0.0.0.0" ]; then
   IP=$(hostname -I | awk '{print $1}')
-  echo "  On your phone (same Wi-Fi): http://$IP:$PORT"
-  if command -v ufw >/dev/null && sudo -n ufw status 2>/dev/null | grep -q "Status: active"; then
-    echo "  Firewall is on. To allow phone access run: sudo ufw allow $PORT/tcp"
-  fi
+  KEY=$(sed -n 's/^TASKMATE_ACCESS_KEY=//p' "$CFG_DIR/config")
+  echo "  On your phone (same Wi-Fi), open once: http://$IP:$PORT/?key=$KEY"
+  echo "  (Keep that link private. Turn phone access off with: bash install.sh --local)"
+else
+  echo "  Phone access is off. To turn it on: bash install.sh --lan"
 fi
 echo "  Your tasks are saved in: $APP_DIR/tasks.db"
 R=$(sed -n 's/^TASKMATE_REPO=//p' "$CFG_DIR/config" 2>/dev/null || true); R="${R:-asanka-J/Task-master}"

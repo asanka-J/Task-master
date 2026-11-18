@@ -114,7 +114,8 @@ button.link{background:none;border:none;color:var(--acc);padding:0;font-size:13p
 <script>
 let tasks=[],editing=null,day=null,dueRel=0;
 const $=s=>document.querySelector(s);
-const api=(m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+const api=(m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined})
+ .then(async r=>{const j=await r.json().catch(()=>({}));if(!r.ok&&j.error&&m!=='GET')alert(j.error);return j});
 const pad=n=>String(n).padStart(2,'0');
 const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const today=()=>fmt(new Date());
@@ -159,6 +160,7 @@ function clean(html){
  const out=doc.body.innerHTML.trim();
  return doc.body.textContent.trim()===''?'':out;
 }
+const safeLink=u=>/^https?:\/\//i.test(u||'');
 const isHTML=s=>/<\/?[a-z][\s\S]*>/i.test(s||'');
 function notesView(n){
  if(!isHTML(n))return esc(n).replace(/\n/g,'<br>');
@@ -221,7 +223,7 @@ function row(t,ctx){
   else if(ctx==='anytime') acts+=`<button class="ghost" onclick="moveTo(${t.id},'${T}')">Do today</button>`;
   else acts+=`<button class="ghost" onclick="moveTo(${t.id},'${addDays(t.due||T,1)}')">→ ${t.due===T||!t.due?'Tomorrow':'Next day'}</button>`;
  }
- if(isM(t)&&t.link&&!t.done) acts+=`<a class="join" href="${esc(t.link)}" target="_blank" rel="noopener">Join</a>`;
+ if(isM(t)&&safeLink(t.link)&&!t.done) acts+=`<a class="join" href="${esc(t.link)}" target="_blank" rel="noopener">Join</a>`;
  acts+=`<button class="ghost" onclick="editing=${t.id};render()">Edit</button><button class="ghost" onclick="del(${t.id})">Delete</button>`;
  let meta='';
  if(isM(t)){const r=!t.done&&rel(t),soon=start(t)&&start(t)-new Date()<10*60000;

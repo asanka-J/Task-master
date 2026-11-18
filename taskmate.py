@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """TaskMate: a tiny self-hosted task + meeting list. Python stdlib only (no pip needed)."""
-import json, os, shutil, sqlite3, subprocess, sys
+import hmac, ipaddress, json, os, re, shutil, socket, sqlite3, subprocess, sys
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit, parse_qs
 
 DATA_DIR = os.path.expanduser(os.environ.get("TASKMATE_DATA", "~/.local/share/taskmate"))
 DB = os.path.join(DATA_DIR, "tasks.db")
-HOST = os.environ.get("TASKMATE_HOST", "0.0.0.0")
+HOST = os.environ.get("TASKMATE_HOST", "127.0.0.1")   # this laptop only unless installed with --lan
 PORT = int(os.environ.get("TASKMATE_PORT", "8765"))
-MEETING_AUTO_DONE_MIN = 60
+MEETING_AUTO_DONE_MIN = 60   # meetings are auto-completed this long after they start
+MAX_BODY = 1_000_000         # largest request body accepted (bytes)
+CONFIG = os.path.expanduser("~/.config/taskmate/config")
+COOKIE = "tm_key"
 HERE = os.path.dirname(os.path.abspath(__file__))
 UPDATER = os.path.join(HERE, "taskmate_update.py")
 
@@ -28,7 +32,65 @@ def start_update():
         if r.returncode == 0:
             return
     # Fallback: detached process (may be stopped if the service restarts before it finishes)
-    subprocess.Popen(cmd, stdout=open(logpath, "w"), stderr=subprocess.STDOUT, start_new_session=True)  # meetings are auto-completed this long after they start
+    subprocess.Popen(cmd, stdout=open(logpath, "w"), stderr=subprocess.STDOUT, start_new_session=True)
+
+def access_key():
+    """Key that other devices (your phone) must present. Set by install.sh --lan."""
+    try:
+        for line in open(CONFIG, encoding="utf-8"):
+            if line.startswith("TASKMATE_ACCESS_KEY="):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+LOCAL_NAMES = {"localhost", socket.gethostname().lower(), socket.gethostname().lower() + ".local"}
+
+def host_ok(host_header):
+    """Only accept requests addressed to this machine by IP or its own name.
+    Blocks DNS-rebinding attacks, which use a domain name the attacker controls."""
+    h = (host_header or "").strip().lower()
+    if h.startswith("["):
+        h = h[1:h.find("]")]
+    elif h.count(":") == 1:
+        h = h.split(":")[0]
+    if h in LOCAL_NAMES:
+        return True
+    try:
+        ipaddress.ip_address(h); return True
+    except ValueError:
+        return False
+
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+LINK_RE = re.compile(r"^https?://", re.I)
+
+def clean_fields(b):
+    """Validate and normalise task fields. Returns (dict, error)."""
+    out = {}
+    for k, v in b.items():
+        if k not in FIELDS: continue
+        if k in ("title", "notes", "project", "link"):
+            if not isinstance(v, str): return None, f"{k} must be text"
+            v = v.strip() if k != "notes" else v
+            if len(v) > (200_000 if k == "notes" else 2000): return None, f"{k} is too long"
+            if k == "link" and v and not LINK_RE.match(v):
+                return None, "Meeting link must start with http:// or https://"
+        elif k == "due":
+            if v and not (isinstance(v, str) and DATE_RE.match(v)): return None, "due must be YYYY-MM-DD"
+        elif k == "time":
+            if v and not (isinstance(v, str) and TIME_RE.match(v)): return None, "time must be HH:MM"
+        elif k == "kind":
+            if v not in ("task", "meeting"): return None, "kind must be task or meeting"
+        elif k == "priority":
+            try: v = int(v)
+            except (TypeError, ValueError): return None, "priority must be 1, 2 or 3"
+            if v not in (1, 2, 3): return None, "priority must be 1, 2 or 3"
+        else:  # done, position, notified
+            try: v = int(v)
+            except (TypeError, ValueError): return None, f"{k} must be a number"
+        out[k] = v
+    return out, None
 
 def db():
     c = sqlite3.connect(DB)
@@ -71,14 +133,71 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        return json.loads(self.rfile.read(n) or b"{}")
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0 or n > MAX_BODY:
+            raise ValueError("request too large")
+        data = json.loads(self.rfile.read(n) or b"{}")
+        if not isinstance(data, dict):
+            raise ValueError("expected a JSON object")
+        return data
+
+    def is_local_client(self):
+        try: return ipaddress.ip_address(self.client_address[0].split("%")[0]).is_loopback
+        except ValueError: return False
+
+    def guard(self, write):
+        """Security checks for every request. Returns True if the request may continue."""
+        # 1. Only answer to our own host names / IPs (stops DNS rebinding)
+        if not host_ok(self.headers.get("Host")):
+            self.send(403, '{"error":"unknown host"}'); return False
+        # 2. Other devices need the access key (cookie, or ?key= once to set it)
+        if not self.is_local_client():
+            key = access_key()
+            q = parse_qs(urlsplit(self.path).query)
+            given = (q.get("key") or [""])[0]
+            if key and given and hmac.compare_digest(given, key):
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", f"{COOKIE}={key}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Content-Length", "0")
+                self.end_headers(); return False
+            cookie = ""
+            for part in (self.headers.get("Cookie") or "").split(";"):
+                k, _, v = part.strip().partition("=")
+                if k == COOKIE: cookie = v
+            if not key or not hmac.compare_digest(cookie, key):
+                self.send(401, "<p style='font:16px system-ui;padding:30px'>TaskMate: open the link with your access key "
+                                "(shown by <code>bash install.sh --lan</code>).</p>", "text/html; charset=utf-8")
+                return False
+        # 3. Changes must come from TaskMate itself, not from another website
+        if write:
+            origin = self.headers.get("Origin")
+            if origin and urlsplit(origin).netloc.lower() != (self.headers.get("Host") or "").lower():
+                self.send(403, '{"error":"cross-site request blocked"}'); return False
+            if (self.headers.get("Sec-Fetch-Site") or "same-origin") not in ("same-origin", "none"):
+                self.send(403, '{"error":"cross-site request blocked"}'); return False
+            # A JSON content type forces browsers to ask permission first for cross-site calls
+            if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+                self.send(415, '{"error":"Content-Type must be application/json"}'); return False
+        return True
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ValueError, json.JSONDecodeError) as e:
+            try: self.send(400, json.dumps({"error": str(e)}))
+            except Exception: pass
 
     def task_id(self):
         try: return int(self.path.rstrip("/").split("/")[-1])
         except ValueError: return None
 
     def do_GET(self):
+        if not self.guard(write=False): return
+        self.path = urlsplit(self.path).path
         if self.path in ("/", "/index.html"):
             return self.send(200, PAGE, "text/html; charset=utf-8")
         if self.path == "/api/version":
@@ -95,20 +214,21 @@ class H(BaseHTTPRequestHandler):
         self.send(404, '{"error":"not found"}')
 
     def do_POST(self):
+        if not self.guard(write=True): return
         if self.path == "/api/tasks":
-            b = self.body()
-            title = (b.get("title") or "").strip()
+            b, err = clean_fields(self.body())
+            if err: return self.send(400, json.dumps({"error": err}))
+            title = b.get("title", "")
             if not title:
                 return self.send(400, '{"error":"title required"}')
-            kind = "meeting" if b.get("kind") == "meeting" else "task"
             with db() as c:
                 pos = c.execute("SELECT COALESCE(MAX(position),0)+1 FROM tasks").fetchone()[0]
                 cur = c.execute(
                     """INSERT INTO tasks(title,notes,project,priority,due,position,created,kind,time,link)
                        VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (title, b.get("notes", ""), b.get("project", ""), int(b.get("priority", 2)),
+                    (title, b.get("notes", ""), b.get("project", ""), b.get("priority", 2),
                      b.get("due", ""), pos, datetime.now().isoformat(timespec="seconds"),
-                     kind, b.get("time", ""), b.get("link", "")))
+                     b.get("kind", "task"), b.get("time", ""), b.get("link", "")))
             return self.send(201, json.dumps({"id": cur.lastrowid}))
         if self.path == "/api/reorder":
             # Reorder only the given ids among the slots they already occupy,
@@ -142,6 +262,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/carryover":
             # Move every unfinished task dated before `to` onto `to`
             to = self.body().get("to") or datetime.now().strftime("%Y-%m-%d")
+            if not (isinstance(to, str) and DATE_RE.match(to)):
+                return self.send(400, '{"error":"to must be YYYY-MM-DD"}')
             with db() as c:
                 n = c.execute("""UPDATE tasks SET due=? WHERE done=0 AND kind!='meeting'
                                  AND due!='' AND due<?""", (to, to)).rowcount
@@ -149,8 +271,11 @@ class H(BaseHTTPRequestHandler):
         self.send(404, '{"error":"not found"}')
 
     def do_PUT(self):
+        if not self.guard(write=True): return
         tid = self.task_id()
-        b = {k: v for k, v in self.body().items() if k in FIELDS}
+        b, err = clean_fields(self.body())
+        if err: return self.send(400, json.dumps({"error": err}))
+        if "title" in b and not b["title"]: b["title"] = "Untitled"
         if tid is None or not b:
             return self.send(400, '{"error":"bad request"}')
         with db() as c:
@@ -167,6 +292,7 @@ class H(BaseHTTPRequestHandler):
         self.send(200, '{"ok":true}')
 
     def do_DELETE(self):
+        if not self.guard(write=True): return
         tid = self.task_id()
         with db() as c:
             if self.path == "/api/tasks/completed":

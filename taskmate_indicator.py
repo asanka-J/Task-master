@@ -50,6 +50,11 @@ def plain(html):
     p = _Text(); p.feed(html)
     return re.sub(r"\s+", " ", "".join(p.out)).strip()
 
+def open_link(url):
+    """Open only http(s) links; never hand other schemes to the system."""
+    if re.match(r"^https?://", url or "", re.I):
+        subprocess.Popen(["xdg-open", url])
+
 def short(s, n=46):
     return s if len(s) <= n else s[: n - 1] + "…"
 
@@ -123,16 +128,18 @@ def has_actions():
 def notify(title, body, urgent=False, link="", sound=False):
     if not shutil.which("notify-send"): return
     args = ["notify-send", "-a", "TaskMate", "-i", ICON if os.path.exists(ICON) else "appointment-soon",
-            "-u", "critical" if urgent else "normal", title, body]
+            "-u", "critical" if urgent else "normal", "--", title, body]
     if sound and SOUND and shutil.which("paplay"):
         subprocess.Popen(["paplay", SOUND], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if link and not re.match(r"^https?://", link, re.I):
+        link = ""
     if link and has_actions():
         def run():
             try:
                 r = subprocess.run(args[:1] + ["-A", "join=Join meeting", "--wait"] + args[1:],
                                    capture_output=True, text=True)
                 if r.stdout.strip() == "join":
-                    subprocess.Popen(["xdg-open", link])
+                    open_link(link)
             except Exception:
                 pass
         threading.Thread(target=run, daemon=True).start()
@@ -299,7 +306,7 @@ class Indicator:
             for m in g["meetings"][:6]:
                 mi = Gtk.MenuItem(label=f"📅 {m['time']}  {short(m['title'], 34)}  ·  {rel(m)}")
                 sub = Gtk.Menu()
-                if m["link"]: self.item(sub, "Join meeting", lambda l=m["link"]: subprocess.Popen(["xdg-open", l]))
+                if re.match(r"^https?://", m["link"] or "", re.I): self.item(sub, "Join meeting", lambda l=m["link"]: open_link(l))
                 if m["notes"]: self.item(sub, short(plain(m["notes"]), 60), sensitive=False)
                 self.item(sub, "✓ Mark done", lambda i=m["id"]: self.done(i))
                 self.item(sub, "Edit…", lambda tt=m: self.dialog(tt))
@@ -528,9 +535,14 @@ class Indicator:
             if dd is None: err.set_text("Date must be YYYY-MM-DD, today or tomorrow."); continue
             if k == "meeting" and not tm: err.set_text("Please enter a start time, e.g. 14:30."); continue
             if k == "meeting" and not dd: dd = iso(today())
+            lk = link.get_text().strip()
+            if k == "meeting" and lk and not re.match(r"^https?://", lk, re.I):
+                if "://" in lk or lk.lower().startswith(("javascript:", "file:", "data:")):
+                    err.set_text("Meeting link must start with https://"); continue
+                lk = "https://" + lk; link.set_text(lk)
             body = {"title": title.get_text().strip(), "kind": k, "due": dd, "time": tm,
                     "project": project.get_text().strip(), "priority": int(prio.get_active_id()),
-                    "link": link.get_text().strip() if k == "meeting" else "",
+                    "link": lk if k == "meeting" else "",
                     # Keep formatted notes as they are unless the text was changed here
                     "notes": orig_notes if notes.get_text() == plain(orig_notes) else notes.get_text()}
             if task: self.act(lambda: api("PUT", f"/api/tasks/{task['id']}", body))

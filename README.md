@@ -19,6 +19,13 @@ cd taskmate && bash install.sh
 
 Open TaskMate from the app grid or the top-bar icon. It also works in a browser at http://localhost:8765.
 
+By default TaskMate only accepts connections from this laptop. To use it from your phone on the same Wi-Fi:
+
+```bash
+bash install.sh --lan     # prints a private link with an access key; open it once on the phone
+bash install.sh --local   # turn phone access off again
+```
+
 ## Release a new version
 
 ```bash

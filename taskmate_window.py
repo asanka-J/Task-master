@@ -72,7 +72,10 @@ class App(Gtk.Application):
         if kind in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
             uri = decision.get_navigation_action().get_request().get_uri()
             if not uri.startswith(URL.rstrip("/")) and not uri.startswith(f"http://127.0.0.1:{PORT}"):
-                subprocess.Popen(["xdg-open", uri]); decision.ignore(); return True
+                # Only web and email links go to the system; anything else (file:, javascript:, …) is dropped
+                if uri.lower().startswith(("http://", "https://", "mailto:")):
+                    subprocess.Popen(["xdg-open", uri])
+                decision.ignore(); return True
         return False
 
     def on_fail(self, view, event, uri, err):
