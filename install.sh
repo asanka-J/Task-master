@@ -124,5 +124,5 @@ if [ "$HOST" = "0.0.0.0" ]; then
   fi
 fi
 echo "  Your tasks are saved in: $APP_DIR/tasks.db"
-R=$(sed -n 's/^TASKMATE_REPO=//p' "$CFG_DIR/config" 2>/dev/null); R="${R:-asanka-J/Task-master}"
+R=$(sed -n 's/^TASKMATE_REPO=//p' "$CFG_DIR/config" 2>/dev/null || true); R="${R:-asanka-J/Task-master}"
 echo "  Updates from: https://github.com/$R/releases"
