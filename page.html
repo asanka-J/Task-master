@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TaskMate</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#6b7280;--line:#e5e7eb;--acc:#2563eb;--mt:#7c3aed;--warn:#b45309;--warnbg:#fff7ed;--hi:#dc2626;--md:#d97706;--lo:#6b7280;--ok:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#111318;--card:#1a1d24;--ink:#e8eaee;--mute:#9aa1ad;--line:#2a2e37;--acc:#60a5fa;--mt:#a78bfa;--warn:#fbbf24;--warnbg:#2a2214}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Ubuntu,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:780px;margin:0 auto;padding:18px 16px 60px}
+.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+h1{font-size:22px;margin:0;flex:1}
+.daynav{display:flex;align-items:center;gap:6px}
+.daynav .lbl{min-width:150px;text-align:center;font-weight:600}
+.daynav .lbl small{display:block;font-weight:400;color:var(--mute);font-size:12px}
+.sub{color:var(--mute);margin:6px 0 16px}
+h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:0 0 6px;display:flex;align-items:center;gap:8px}
+h2 .sp{flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.next{border-left:4px solid var(--acc)}.next .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--acc);font-weight:600}
+.next .t{font-size:19px;font-weight:600;margin:4px 0 10px}
+.meet{border-left:4px solid var(--mt)}
+.carry{border-left:4px solid var(--warn);background:var(--warnbg)}
+form.add{display:grid;grid-template-columns:110px 1fr 1fr 1fr;gap:8px}
+form.add .full{grid-column:1/-1}
+form.add .mOnly{display:none}form.add.isMeeting .mOnly{display:block}form.add.isMeeting .tOnly{display:none}
+.quick{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.quick button{padding:5px 10px;font-size:13px}
+.quick button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.msg{color:var(--ok);font-size:13px}
+@media(max-width:640px){form.add{grid-template-columns:1fr 1fr}.daynav .lbl{min-width:110px}}
+input,select,textarea,button{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+button{cursor:pointer;background:var(--acc);color:#fff;border:none}
+button.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
+button.warn{background:var(--warn);color:#fff}
+a.join{display:inline-block;background:var(--mt);color:#fff;text-decoration:none;border-radius:8px;padding:4px 10px;font-size:13px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.bar .grow{flex:1}
+.task{display:flex;gap:10px;align-items:flex-start;padding:9px 4px;border-bottom:1px solid var(--line)}
+.task:last-child{border-bottom:none}.task input[type=checkbox]{width:20px;height:20px;margin-top:2px;cursor:pointer;flex:none}
+.task .main{flex:1;min-width:0}.task .ttl{font-weight:500;word-wrap:break-word}
+.task.done .ttl{text-decoration:line-through;color:var(--mute)}
+.meta{font-size:12.5px;color:var(--mute);display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
+.notes{font-size:13.5px;color:var(--mute);white-space:pre-wrap;margin-top:4px}
+.p1{color:var(--hi);font-weight:600}.p2{color:var(--md)}.p3{color:var(--lo)}.over{color:var(--hi);font-weight:600}
+.missed{color:var(--hi);font-weight:600}
+.rel{color:var(--mt);font-weight:600}.soon{color:var(--hi)}
+.acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.acts button{padding:4px 8px;font-size:13px}
+.drag{cursor:grab;color:var(--mute);user-select:none;padding-top:2px}.task.dragging{opacity:.4}
+.edit{display:grid;gap:6px;margin-top:6px}.edit .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.empty{color:var(--mute);text-align:center;padding:12px}
+.sec{margin-top:10px;padding-top:6px}
+.foot{text-align:center;margin-top:10px}
+</style></head><body><div class="wrap">
+
+<div class="top">
+ <h1>TaskMate</h1>
+ <div class="daynav">
+  <button class="ghost" id="prev" title="Previous day">◀</button>
+  <div class="lbl" id="dayLbl"></div>
+  <button class="ghost" id="nextDay" title="Next day">▶</button>
+  <button class="ghost" id="goToday">Today</button>
+  <span style="position:relative"><button class="ghost" id="pickBtn" title="Jump to a date">📅</button><input type="date" id="pick" style="position:absolute;inset:0;opacity:0;pointer-events:none"></span>
+ </div>
+</div>
+<div class="sub" id="stats"></div>
+
+<div id="carryCard"></div>
+<div class="card meet" id="meetCard"></div>
+<div id="nextCard"></div>
+
+<div class="card">
+<form class="add" id="addForm">
+ <select name="kind" id="kindSel"><option value="task">Task</option><option value="meeting">Meeting</option></select>
+ <input name="title" placeholder="What needs doing?" required autocomplete="off" style="grid-column:span 3">
+ <div class="quick full">
+  <button type="button" class="ghost" data-q="0">Today</button>
+  <button type="button" class="ghost" data-q="1">Tomorrow</button>
+  <button type="button" class="ghost" data-q="">No date</button>
+  <input name="due" type="date" id="addDue" title="Date">
+  <input name="time" type="time" class="mOnly" title="Start time">
+  <span class="msg" id="addMsg"></span>
+ </div>
+ <input name="project" placeholder="Project" list="projects" style="grid-column:span 2">
+ <select name="priority" class="tOnly" style="grid-column:span 2"><option value="1">High</option><option value="2" selected>Medium</option><option value="3">Low</option></select>
+ <input name="link" class="mOnly" placeholder="Meeting link (optional)" style="grid-column:span 2">
+ <button class="full">Add</button>
+</form><datalist id="projects"></datalist>
+</div>
+
+<div class="card">
+ <div class="bar">
+  <input class="grow" id="q" placeholder="Search all tasks">
+  <select id="fp"><option value="">All projects</option></select>
+  <select id="sort"><option value="manual">My order</option><option value="priority">Priority</option></select>
+ </div>
+ <div id="main"></div>
+</div>
+<div class="foot"><button class="ghost" id="clearDone">Delete all completed</button></div>
+</div>
+<script>
+let tasks=[],editing=null,day=null,dueRel=0;
+const $=s=>document.querySelector(s);
+const api=(m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(r=>r.json());
+const pad=n=>String(n).padStart(2,'0');
+const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today=()=>fmt(new Date());
+const addDays=(s,n)=>{const d=new Date(s+'T12:00');d.setDate(d.getDate()+n);return fmt(d)};
+const nice=s=>new Date(s+'T12:00').toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});
+function dayName(s){const t=today();if(s===t)return 'Today';if(s===addDays(t,-1))return 'Yesterday';if(s===addDays(t,1))return 'Tomorrow';return new Date(s+'T12:00').toLocaleDateString(undefined,{weekday:'long'})}
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PN={1:'High',2:'Medium',3:'Low'};
+const isM=t=>t.kind==='meeting';
+const start=t=>t.due&&t.time?new Date(`${t.due}T${t.time}`):null;
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+function dur(mins){const h=Math.floor(mins/60),m=mins%60;return [h?plural(h,'hour'):'',m?plural(m,'min'):''].filter(Boolean).join(' ')}
+function rel(t){
+ const s=start(t);if(!s)return '';
+ const diff=s-new Date();
+ if(diff<0){const m=Math.floor(-diff/60000);return m<1?'starting now':`started ${dur(m)} ago`}
+ const m=Math.ceil(diff/60000);
+ if(m<=1)return 'starting now';
+ if(m<24*60)return 'in '+dur(m);
+ if(t.due===addDays(today(),1))return 'tomorrow at '+t.time;
+ return nice(t.due)+', '+t.time;
+}
+const doneOn=t=>(t.completed||'').slice(0,10);
+
+async function load(){tasks=await api('GET','/api/tasks');render();}
+
+function srt(list){return $('#sort').value==='priority'?[...list].sort((a,b)=>a.priority-b.priority):list}
+
+function editRow(t){
+ return `<div class="task" data-id="${t.id}"><div class="main"><div class="edit">
+  <input id="e_title" value="${esc(t.title)}">
+  <div class="row"><select id="e_kind"><option value="task" ${!isM(t)?'selected':''}>Task</option><option value="meeting" ${isM(t)?'selected':''}>Meeting</option></select>
+  <input id="e_project" value="${esc(t.project)}" placeholder="Project" list="projects">
+  <select id="e_priority">${[1,2,3].map(p=>`<option value="${p}" ${p==t.priority?'selected':''}>${PN[p]}</option>`).join('')}</select></div>
+  <div class="row"><input id="e_due" type="date" value="${esc(t.due)}"><input id="e_time" type="time" value="${esc(t.time)}">
+  <input id="e_link" value="${esc(t.link)}" placeholder="Meeting link"></div>
+  <textarea id="e_notes" rows="2" placeholder="Notes">${esc(t.notes)}</textarea>
+  <div class="acts" style="justify-content:flex-start"><button onclick="saveEdit(${t.id})">Save</button><button class="ghost" onclick="editing=null;render()">Cancel</button></div>
+ </div></div></div>`;
+}
+// ctx: 'day' (open task on viewed day), 'carry' (unfinished from earlier), 'anytime', 'done', 'search'
+function row(t,ctx){
+ if(editing===t.id)return editRow(t);
+ const T=today(),past=t.due&&t.due<T&&!t.done;
+ const canDrag=(ctx==='day'||ctx==='anytime')&&!t.done&&!isM(t)&&!past&&$('#sort').value==='manual'&&!$('#q').value;
+ let acts='';
+ if(!t.done&&!isM(t)){
+  if(past) acts+=`<button class="ghost" onclick="moveTo(${t.id},'${T}')">Move to today</button>`;
+  else if(ctx==='anytime') acts+=`<button class="ghost" onclick="moveTo(${t.id},'${T}')">Do today</button>`;
+  else acts+=`<button class="ghost" onclick="moveTo(${t.id},'${addDays(t.due||T,1)}')">→ ${t.due===T||!t.due?'Tomorrow':'Next day'}</button>`;
+ }
+ if(isM(t)&&t.link&&!t.done) acts+=`<a class="join" href="${esc(t.link)}" target="_blank" rel="noopener">Join</a>`;
+ acts+=`<button class="ghost" onclick="editing=${t.id};render()">Edit</button><button class="ghost" onclick="del(${t.id})">Delete</button>`;
+ let meta='';
+ if(isM(t)){const r=!t.done&&rel(t),soon=start(t)&&start(t)-new Date()<10*60000;
+  meta=`${r?`<span class="rel ${soon?'soon':''}">${r}</span>`:''}<span>${t.time||''}${ctx==='search'?' · '+nice(t.due):''}</span>`;}
+ else{meta=`<span class="p${t.priority}">${PN[t.priority]}</span>`;
+  if(ctx==='carry')meta+=`<span class="over">From ${dayName(t.due).toLowerCase()==='yesterday'?'yesterday':nice(t.due)}</span>`;
+  else if(ctx==='search'||ctx==='done')meta+=t.due?`<span>${nice(t.due)}</span>`:'';
+  if(ctx==='day'&&past)meta+=`<span class="missed">Not done</span>`;}
+ if(t.project)meta+=`<span>#${esc(t.project)}</span>`;
+ if(t.done&&ctx==='done'&&t.due&&doneOn(t)&&doneOn(t)!==t.due)meta+=`<span>done ${nice(doneOn(t))}</span>`;
+ return `<div class="task ${t.done?'done':''}" data-id="${t.id}" ${canDrag?'draggable="true"':''}>
+  ${canDrag?'<span class="drag" title="Drag to reorder">⋮⋮</span>':''}
+  <input type="checkbox" ${t.done?'checked':''} onchange="toggle(${t.id},this.checked)">
+  <div class="main"><div class="ttl">${isM(t)?'📅 ':''}${esc(t.title)}</div><div class="meta">${meta}</div>
+   ${t.notes?`<div class="notes">${esc(t.notes)}</div>`:''}</div>
+  <div class="acts">${acts}</div></div>`;
+}
+const list=(items,ctx,empty)=>items.length?items.map(t=>row(t,ctx)).join(''):(empty?`<div class="empty">${empty}</div>`:'');
+
+function render(){
+ const T=today(),q=$('#q').value.toLowerCase(),fp=$('#fp').value;
+ const pf=t=>!fp||t.project===fp;
+ $('#dayLbl').innerHTML=`${dayName(day)}<small>${nice(day)}</small>`;
+ $('#pick').value=day;
+
+ const tasksOnly=tasks.filter(t=>!isM(t)&&pf(t));
+ const dayOpen=srt(tasksOnly.filter(t=>!t.done&&t.due===day));
+ const dayDone=tasks.filter(t=>t.done&&pf(t)&&(t.due===day||(!t.due&&doneOn(t)===day)));
+ const carry=day===T?tasksOnly.filter(t=>!t.done&&t.due&&t.due<T):[];
+ const anytime=day===T?srt(tasksOnly.filter(t=>!t.done&&!t.due)):[];
+ const meetings=tasks.filter(t=>isM(t)&&t.due===day&&pf(t)).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+
+ // Carry-over card
+ $('#carryCard').innerHTML=carry.length?`<div class="card carry"><h2>Unfinished from earlier (${carry.length})<span class="sp"></span>
+   <button class="warn" onclick="carryAll()">Move all to today</button></h2>${list(carry,'carry')}</div>`:'';
+
+ // Meetings
+ $('#meetCard').innerHTML=`<h2>Meetings · ${dayName(day)}</h2>`+list(meetings,'day','No meetings');
+
+ // Next up (today only)
+ const nx=day===T?(dayOpen[0]||anytime[0]):null;
+ $('#nextCard').innerHTML=nx?`<div class="card next"><div class="lbl">Do this next</div><div class="t">${esc(nx.title)}</div>
+   <div class="meta" style="margin-bottom:10px"><span class="p${nx.priority}">${PN[nx.priority]}</span>${nx.project?`<span>#${esc(nx.project)}</span>`:''}</div>
+   <button onclick="toggle(${nx.id},true)">Mark done</button> <button class="ghost" onclick="skip(${nx.id})">Later</button></div>`:'';
+
+ // Main list
+ if(q){
+  const hits=tasks.filter(t=>pf(t)&&(t.title+' '+t.notes+' '+t.project).toLowerCase().includes(q))
+   .sort((a,b)=>a.done-b.done||(b.due||'').localeCompare(a.due||''));
+  $('#main').innerHTML=`<h2>Search results (${hits.length})</h2>`+list(hits,'search','No matches');
+ }else{
+  const label=day===T?'To do today':day<T?`Planned for ${dayName(day).toLowerCase()}`:`Planned for ${dayName(day).toLowerCase()}`;
+  let h=`<h2>${label} (${dayOpen.length})</h2><div id="dragList">${list(dayOpen,'day',day<T?'Nothing left undone':'Nothing planned')}</div>`;
+  if(anytime.length)h+=`<div class="sec"><h2>No date (${anytime.length})</h2><div id="dragList2">${list(anytime,'anytime')}</div></div>`;
+  if(dayDone.length)h+=`<div class="sec"><h2>Done ${day===T?'today':day<T?dayName(day).toLowerCase()==='yesterday'?'yesterday':'that day':''} (${dayDone.length})</h2>${list(dayDone,'done')}</div>`;
+  $('#main').innerHTML=h;
+ }
+
+ const todayOpen=tasksOnly.filter(t=>!t.done&&t.due===T).length,todayDone=tasks.filter(t=>t.done&&!isM(t)&&(t.due===T||doneOn(t)===T)).length;
+ const nm=tasks.filter(t=>isM(t)&&!t.done&&start(t)&&start(t)>new Date()).sort((a,b)=>start(a)-start(b))[0];
+ $('#stats').textContent=`Today: ${todayOpen} to do · ${todayDone} done`+(carry.length?` · ${carry.length} carried over`:'')+(nm?` · next meeting "${nm.title}" ${rel(nm)}`:'');
+
+ const projs=[...new Set(tasks.map(t=>t.project).filter(Boolean))].sort();
+ $('#projects').innerHTML=projs.map(p=>`<option value="${esc(p)}">`).join('');
+ const cur=$('#fp').value;$('#fp').innerHTML='<option value="">All projects</option>'+projs.map(p=>`<option ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
+ bindDrag('#dragList');bindDrag('#dragList2');
+}
+function setDay(d){day=d;editing=null;setAddDue(dueRel===''?'':day===today()?addDays(today(),dueRel):day);render()}
+async function toggle(id,d){await api('PUT','/api/tasks/'+id,{done:d?1:0});load();}
+async function moveTo(id,d){await api('PUT','/api/tasks/'+id,{due:d});load();}
+async function del(id){if(confirm('Delete this item?')){await api('DELETE','/api/tasks/'+id);load();}}
+async function carryAll(){await api('POST','/api/carryover',{to:today()});load();}
+async function skip(id){
+ const T=today(),ids=[...tasks.filter(t=>!t.done&&!isM(t)&&t.due===T),...tasks.filter(t=>!t.done&&!isM(t)&&!t.due)].map(t=>t.id);
+ const rest=ids.filter(x=>x!==id);rest.push(id);await api('POST','/api/reorder',{ids:rest});load();}
+async function saveEdit(id){
+ const kind=$('#e_kind').value;let due=$('#e_due').value;
+ if(kind==='meeting'&&!due&&$('#e_time').value)due=today();
+ await api('PUT','/api/tasks/'+id,{title:$('#e_title').value.trim()||'Untitled',kind,project:$('#e_project').value.trim(),
+  priority:+$('#e_priority').value,due,time:$('#e_time').value,link:$('#e_link').value.trim(),notes:$('#e_notes').value});
+ editing=null;load();
+}
+// Add form
+function setAddDue(v){$('#addDue').value=v;document.querySelectorAll('.quick [data-q]').forEach(b=>{
+ const q=b.dataset.q;b.classList.toggle('on',q===''?v==='':v===addDays(today(),+q))})}
+document.querySelectorAll('.quick [data-q]').forEach(b=>b.onclick=()=>{dueRel=b.dataset.q===''?'':+b.dataset.q;setAddDue(dueRel===''?'':addDays(today(),dueRel))});
+$('#addDue').oninput=e=>setAddDue(e.target.value);
+$('#kindSel').onchange=e=>$('#addForm').classList.toggle('isMeeting',e.target.value==='meeting');
+$('#addForm').onsubmit=async e=>{e.preventDefault();const fd=Object.fromEntries(new FormData(e.target));
+ if(fd.kind==='meeting'){if(!fd.time){alert('Please set a start time for the meeting');return}if(!fd.due)fd.due=today();}
+ else{fd.time='';fd.link='';}
+ await api('POST','/api/tasks',fd);
+ $('#addMsg').textContent=fd.due&&fd.due!==day?`Added for ${dayName(fd.due).toLowerCase()==='tomorrow'?'tomorrow':nice(fd.due)}`:'';
+ setTimeout(()=>$('#addMsg').textContent='',4000);
+ e.target.title.value='';e.target.time.value='';e.target.link.value='';e.target.title.focus();load();};
+$('#clearDone').onclick=async()=>{if(confirm('Delete ALL completed items, on every day?')){await api('DELETE','/api/tasks/completed');load();}};
+['#q','#fp','#sort'].forEach(s=>$(s).addEventListener('input',render));
+$('#prev').onclick=()=>setDay(addDays(day,-1));
+$('#nextDay').onclick=()=>setDay(addDays(day,1));
+$('#goToday').onclick=()=>setDay(today());
+$('#pickBtn').onclick=()=>{try{$('#pick').showPicker()}catch(e){$('#pick').focus()}};
+$('#pick').onchange=e=>e.target.value&&setDay(e.target.value);
+
+function bindDrag(sel){
+ const box=$(sel);if(!box)return;let src=null;
+ box.querySelectorAll('.task[draggable]').forEach(el=>{
+  el.ondragstart=()=>{src=el;el.classList.add('dragging')};
+  el.ondragend=async()=>{el.classList.remove('dragging');
+   await api('POST','/api/reorder',{ids:[...box.querySelectorAll('.task')].map(x=>+x.dataset.id)});load();};
+  el.ondragover=e=>{e.preventDefault();if(!src||src===el)return;
+   const r=el.getBoundingClientRect();box.insertBefore(src,e.clientY<r.top+r.height/2?el:el.nextSibling);};
+ });
+}
+day=today();setAddDue(today());load();
+const busy=()=>editing!==null||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+let lastDay=today();
+setInterval(()=>{if(today()!==lastDay){if(day===lastDay)day=today();lastDay=today();setAddDue(today())}if(!busy())load()},30000);
+setInterval(()=>{if(!busy())render()},15000);
+</script></body></html>

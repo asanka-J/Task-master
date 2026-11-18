@@ -1,0 +1,24 @@
+# Push a tag like v1.1.0 and this builds taskmate.tar.gz and publishes a GitHub Release.
+# Installed copies of TaskMate pick it up from the top-bar menu.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build archive
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/taskmate
+          cp README.md taskmate.py page.html taskmate_indicator.py taskmate_update.py icon.svg install.sh uninstall.sh dist/taskmate/
+          echo "$VER" > dist/taskmate/VERSION
+          tar -C dist -czf taskmate.tar.gz taskmate
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" taskmate.tar.gz --title "TaskMate $GITHUB_REF_NAME" --generate-notes
