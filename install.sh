@@ -101,6 +101,25 @@ StartupNotify=true
 EOF
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 
+# Keyboard shortcut Super+Shift+T opens the quick panel (added next to any shortcuts you already have)
+add_shortcut() {
+  command -v gsettings >/dev/null || return 0
+  local KB=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/taskmate-panel/
+  local LIST; LIST=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null) || return 0
+  if ! echo "$LIST" | grep -q taskmate-panel; then
+    local NEW; NEW=$(python3 -c 'import ast,sys
+l=sys.argv[1].replace("@as ","").strip()
+a=ast.literal_eval(l) if l not in ("","[]") else []
+a.append(sys.argv[2]); print(str(a))' "$LIST" "$KB") || return 0
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$NEW" || return 0
+  fi
+  local S="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB"
+  gsettings set "$S" name "TaskMate panel"
+  gsettings set "$S" command "env TASKMATE_PORT=$PORT /usr/bin/python3 $APP_DIR/taskmate_window.py --panel"
+  gsettings set "$S" binding "<Super><Shift>t"
+}
+[ -n "$DBUS_SESSION_BUS_ADDRESS" ] && { add_shortcut || true; }
+
 # Start the top-bar icon on login, and start it now
 mkdir -p "$HOME/.config/autostart"
 cat > "$HOME/.config/autostart/taskmate-indicator.desktop" <<EOF
@@ -124,6 +143,7 @@ echo
 echo "TaskMate $(cat "$APP_DIR/VERSION") is running."
 [ "$UPDATE" = 1 ] && exit 0
 echo "  Open it from the app grid (TaskMate) or the top-bar icon."
+echo "  Quick panel: Super+Shift+T, middle-click the top-bar icon, or choose Show Panel."
 echo "  In a browser: http://localhost:$PORT"
 if [ "$HOST" = "0.0.0.0" ]; then
   IP=$(hostname -I | awk '{print $1}')

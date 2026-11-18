@@ -222,13 +222,13 @@ class Indicator:
     def update_label(self):
         g = self.groups()
         lbl = str(len(g["today"]) + len(g["carry"]))
-        if g["carry"]: lbl += f" ({len(g['carry'])} late)"
+        if g["carry"]: lbl += f" (+{len(g['carry'])})"
         now = datetime.now()
         upcoming = [m for m in g["meetings"] if start_of(m) and start_of(m) > now - timedelta(minutes=5)
                     and start_of(m) - now < timedelta(hours=12)]
         if upcoming:
             m = upcoming[0]
-            lbl += f"  ·  {short(m['title'], 18)} {rel(m, True)}"
+            lbl += f"   {short(m['title'], 18)} {rel(m, True)}"
         self.ind.set_label(lbl, "99 (9 late)  ·  Meeting name here in 11h 59m")
 
     # ---------- reminders ----------
@@ -301,170 +301,92 @@ class Indicator:
         T = iso(today())
         done_today = [t for t in self.tasks if t["kind"] != "meeting" and t["done"]
                       and (t["due"] == T or (t["completed"] or "")[:10] == T)]
+        todo = g["today"] + g["anytime"]
 
-        # Summary line
-        left = len(g["today"]) + len(g["carry"])
-        summary = f"{date.today().strftime('%A %d %b')}   ·   {left} to do   ·   {len(done_today)} done"
-        self.item(menu, summary, sensitive=False)
+        # Header: one quiet line
+        left = len(g["today"])
+        head = "Nothing left today" if not left else f"{left} left today"
+        if done_today: head += f", {len(done_today)} done"
+        panel = self.item(menu, "Show Panel", self.open_panel)
+        try: self.ind.set_secondary_activate_target(panel)   # middle-click the icon
+        except Exception: pass
+        self.sep(menu)
+        self.item(menu, head, sensitive=False)
 
-        # Update available: show it prominently
         if self.update and not self.updating:
-            self.sep(menu)
-            self.item(menu, f"⬆️   Update to {self.update['latest']}", self.install_update)
+            self.item(menu, f"Update to {self.update['latest']}…", self.install_update)
 
-        # Meetings (today + tomorrow)
-        if g["meetings"]:
+        # Meetings: time first, like a calendar
+        now = datetime.now()
+        upcoming = [m for m in g["meetings"] if start_of(m) and start_of(m) > now - timedelta(minutes=30)]
+        if upcoming:
             self.sep(menu)
-            for m in g["meetings"][:6]:
-                when = rel(m)
-                mi = Gtk.MenuItem(label=f"📅   {m['time']}   {short(m['title'], 32)}   ·   {when}")
+            for m in upcoming[:4]:
+                day = "" if m["due"] == T else "Tomorrow "
+                mi = Gtk.MenuItem(label=f"{day}{m['time']}   {short(m['title'], 34)}")
                 sub = Gtk.Menu()
+                self.item(sub, rel(m).capitalize(), sensitive=False)
                 if re.match(r"^https?://", m["link"] or "", re.I):
-                    self.item(sub, "🎥   Join meeting", lambda l=m["link"]: open_link(l))
-                if m["notes"]: self.item(sub, "📝   " + short(plain(m["notes"]), 56), sensitive=False)
-                self.sep(sub)
-                self.item(sub, "✅   Mark done", lambda i=m["id"]: self.done(i))
-                self.item(sub, "✏️   Edit…", lambda tt=m: self.dialog(tt))
-                self.item(sub, "🗑️   Delete", lambda i=m["id"]: self.delete(i))
+                    self.item(sub, "Join Meeting", lambda l=m["link"]: open_link(l))
+                self.item(sub, "Edit…", lambda tt=m: self.dialog(tt))
+                self.item(sub, "Delete", lambda i=m["id"]: self.delete(i))
                 mi.set_submenu(sub); menu.append(mi)
 
-        # Up next
-        todo = g["today"] + g["anytime"]
-        self.sep(menu)
+        # Tasks: the list itself, next one first
         if todo:
-            n = todo[0]
-            self.item(menu, "Up next", sensitive=False)
-            nxt = self.task_item(n, todo, prefix="🎯   ")
-            menu.append(nxt)
-            self.item(menu, "✅   Mark done", lambda i=n["id"]: self.done(i))
-            if len(todo) > 1:
-                self.item(menu, "⏭️   Do it later", lambda i=n["id"]: self.move(i, "bottom"))
-        else:
-            self.item(menu, "🎉   All done for today", sensitive=False)
-
-        # Rest of today
-        rest = [t for t in g["today"] if not todo or t["id"] != todo[0]["id"]]
-        if rest:
             self.sep(menu)
-            self.item(menu, f"Also today  ({len(rest)})", sensitive=False)
-            for t in rest[:MAX_ITEMS]:
-                menu.append(self.task_item(t, g["today"]))
-            if len(rest) > MAX_ITEMS:
-                self.item(menu, f"      …and {len(rest) - MAX_ITEMS} more", self.open_web)
+            for t in todo[:MAX_ITEMS]:
+                menu.append(self.task_item(t, todo, anytime=not t["due"]))
+            if len(todo) > MAX_ITEMS:
+                self.item(menu, f"{len(todo) - MAX_ITEMS} more…", self.open_web)
 
-        # Carry over / no date
-        if g["carry"] or g["anytime"]:
-            self.sep(menu)
         if g["carry"]:
-            mi = Gtk.MenuItem(label=f"⚠️   {plural(len(g['carry']), 'unfinished task')} from earlier")
+            self.sep(menu)
+            mi = Gtk.MenuItem(label=f"{plural(len(g['carry']), 'task')} from earlier")
             sub = Gtk.Menu()
-            self.item(sub, "➡️   Move all to today", self.carry_all)
+            self.item(sub, "Move All to Today", self.carry_all)
             self.sep(sub)
             for t in g["carry"][:MAX_ITEMS]:
-                ti = Gtk.MenuItem(label=f"{self.dot(t)}   {short(t['title'], 38)}   ·   {nice_day(t['due'])}")
+                ti = Gtk.MenuItem(label=short(t["title"], 40))
                 ts = Gtk.Menu()
-                self.item(ts, "➡️   Move to today", lambda i=t["id"]: self.set_due(i, T))
-                self.item(ts, "✅   Mark done", lambda i=t["id"]: self.done(i))
-                self.item(ts, "✏️   Edit…", lambda tt=t: self.dialog(tt))
-                self.item(ts, "🗑️   Delete", lambda i=t["id"]: self.delete(i))
+                self.item(ts, "Move to Today", lambda i=t["id"]: self.set_due(i, T))
+                self.item(ts, "Mark as Done", lambda i=t["id"]: self.done(i))
+                self.item(ts, "Delete", lambda i=t["id"]: self.delete(i))
                 ti.set_submenu(ts); sub.append(ti)
             mi.set_submenu(sub); menu.append(mi)
-        if g["anytime"]:
-            mi = Gtk.MenuItem(label=f"📥   No date  ({len(g['anytime'])})")
-            sub = Gtk.Menu()
-            for t in g["anytime"][:MAX_ITEMS]:
-                sub.append(self.task_item(t, g["anytime"], anytime=True))
-            mi.set_submenu(sub); menu.append(mi)
 
-        # Other days
         self.sep(menu)
-        menu.append(self.day_menu("Yesterday", today() - timedelta(days=1)))
-        menu.append(self.day_menu("Tomorrow", today() + timedelta(days=1)))
-
-        # Actions
+        self.item(menu, "New Task…", lambda: self.dialog(due=T))
+        self.item(menu, "Open TaskMate", self.open_web)
         self.sep(menu)
-        self.item(menu, "➕   Add task…", lambda: self.dialog(due=T))
-        self.item(menu, "📅   Add meeting…", lambda: self.dialog(kind="meeting"))
-        self.item(menu, "🗂️   Open TaskMate", self.open_web)
-
-        # Settings submenu keeps the rarely used items out of the way
-        self.sep(menu)
-        mi = Gtk.MenuItem(label=f"⚙️   TaskMate {self.version()}")
-        sub = Gtk.Menu()
         if self.updating:
-            self.item(sub, "Updating…", sensitive=False)
-        elif self.update:
-            self.item(sub, f"⬆️   Install update {self.update['latest']}", self.install_update)
-        else:
-            self.item(sub, "🔄   Check for updates", lambda: self.check_updates(manual=True))
-        self.item(sub, "⏻   Quit top-bar icon", Gtk.main_quit)
-        mi.set_submenu(sub); menu.append(mi)
+            self.item(menu, "Updating…", sensitive=False)
+        elif not self.update:
+            self.item(menu, "Check for Updates", lambda: self.check_updates(manual=True))
+        self.item(menu, "Quit", Gtk.main_quit)
         menu.show_all()
         self.ind.set_menu(menu)
         return True
-
-    @staticmethod
-    def dot(t):
-        if t["kind"] == "meeting": return "📅"
-        return {1: "🔴", 2: "🟡", 3: "⚪"}.get(t["priority"], "⚪")
 
     def version(self):
         try: return open(os.path.join(APP_DIR, "VERSION")).read().strip()
         except OSError: return "?"
 
-    def day_menu(self, name, d):
-        D = iso(d)
-        items = [t for t in self.tasks if t["due"] == D or (t["done"] and not t["due"] and (t["completed"] or "")[:10] == D)]
-        items.sort(key=lambda t: (t["kind"] != "meeting", t["time"] or "", t["done"]))
-        past = d < today()
-        tasks_only = [t for t in items if t["kind"] != "meeting"]
-        if past:
-            n_done = sum(1 for t in tasks_only if t["done"])
-            info = f"{n_done} done" + (f", {len(tasks_only) - n_done} missed" if len(tasks_only) > n_done else "")
-        else:
-            info = f"{len(tasks_only)} planned"
-        meet = sum(1 for t in items if t["kind"] == "meeting")
-        if meet: info += f", {plural(meet, 'meeting')}"
-        mi = Gtk.MenuItem(label=f"🗓️   {name}   ·   {info if items else 'nothing'}")
-        sub = Gtk.Menu()
-        if not items:
-            self.item(sub, "Nothing here", sensitive=False)
-        for t in items[:20]:
-            if t["kind"] == "meeting":
-                lbl = f"📅   {t['time']}   {short(t['title'], 40)}"
-            else:
-                mark = "✅" if t["done"] else ("❌" if past else self.dot(t))
-                lbl = f"{mark}   {short(t['title'], 42)}"
-            ti = Gtk.MenuItem(label=lbl)
-            ts = Gtk.Menu()
-            if not t["done"] and t["kind"] != "meeting":
-                if past: self.item(ts, "➡️   Move to today", lambda i=t["id"]: self.set_due(i, iso(today())))
-                else: self.item(ts, "⬅️   Do today instead", lambda i=t["id"]: self.set_due(i, iso(today())))
-                self.item(ts, "✅   Mark done", lambda i=t["id"]: self.done(i))
-            elif t["done"]:
-                self.item(ts, "↩️   Mark not done", lambda i=t["id"]: self.undone(i))
-            self.item(ts, "✏️   Edit…", lambda tt=t: self.dialog(tt))
-            self.item(ts, "🗑️   Delete", lambda i=t["id"]: self.delete(i))
-            ti.set_submenu(ts); sub.append(ti)
-        mi.set_submenu(sub)
-        return mi
-
     def task_item(self, t, siblings, anytime=False, prefix=None):
-        proj = f"   ·   {t['project']}" if t["project"] else ""
-        mi = Gtk.MenuItem(label=(prefix or f"{self.dot(t)}   ") + short(t["title"], 40) + proj)
-        # Keep this short: Ubuntu opens submenus inside the menu, so long ones hide the tasks below
+        # Plain title; high priority gets a quiet marker. Submenu stays short so the list never jumps.
+        mark = "!  " if t["priority"] == 1 else ""
+        mi = Gtk.MenuItem(label=mark + short(t["title"], 44))
         sub = Gtk.Menu()
-        self.item(sub, "✅   Mark done", lambda i=t["id"]: self.done(i))
+        self.item(sub, "Mark as Done", lambda i=t["id"]: self.done(i))
         ids = [x["id"] for x in siblings]
-        idx = ids.index(t["id"]) if t["id"] in ids else 0
-        if idx > 0:
-            self.item(sub, "🎯   Do next", lambda i=t["id"]: self.move(i, "top", ids))
+        if t["id"] in ids and ids.index(t["id"]) > 0:
+            self.item(sub, "Do Next", lambda i=t["id"]: self.move(i, "top", ids))
         if anytime:
-            self.item(sub, "📌   Do today", lambda i=t["id"]: self.set_due(i, iso(today())))
+            self.item(sub, "Do Today", lambda i=t["id"]: self.set_due(i, iso(today())))
         else:
-            self.item(sub, "➡️   Move to tomorrow", lambda i=t["id"]: self.set_due(i, iso(today() + timedelta(days=1))))
-        self.item(sub, "✏️   Edit…", lambda tt=t: self.dialog(tt))
-        self.item(sub, "🗑️   Delete", lambda i=t["id"]: self.delete(i))
+            self.item(sub, "Move to Tomorrow", lambda i=t["id"]: self.set_due(i, iso(today() + timedelta(days=1))))
+        self.item(sub, "Edit…", lambda tt=t: self.dialog(tt))
+        self.item(sub, "Delete", lambda i=t["id"]: self.delete(i))
         mi.set_submenu(sub)
         return mi
 
@@ -488,6 +410,11 @@ class Indicator:
         j = {"top": 0, "bottom": len(ids), "up": max(0, i - 1), "down": min(len(ids), i + 1)}[where]
         ids.insert(j, tid)
         self.act(lambda: api("POST", "/api/reorder", {"ids": ids}))
+
+    def open_panel(self):
+        win = os.path.join(APP_DIR, "taskmate_window.py")
+        if os.path.exists(win):
+            subprocess.Popen(["/usr/bin/python3", win, "--panel"], env={**os.environ, "TASKMATE_PORT": str(PORT)})
 
     def open_web(self):
         win = os.path.join(APP_DIR, "taskmate_window.py")

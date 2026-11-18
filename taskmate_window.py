@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """TaskMate desktop window: shows the TaskMate page in its own app window (no browser).
-Only one window is opened; launching again brings the existing window to the front."""
+Only one window is opened; launching again brings the existing window to the front.
+
+  taskmate_window.py           the full TaskMate window
+  taskmate_window.py --panel   the quick panel (opened from the top bar); running it again toggles it"""
 import json, os, shutil, subprocess, sys
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gio, GLib
+from gi.repository import Gtk, Gio, GLib, Gdk
 
 WebKit2 = None
 for v in ("4.1", "4.0"):
@@ -100,9 +103,80 @@ class App(Gtk.Application):
             pass
         return False
 
+class Panel(Gtk.Application):
+    """Small always-ready panel: hidden instead of closed, so it opens instantly next time."""
+    WIDTH, HEIGHT = 400, 600
+
+    def __init__(self):
+        super().__init__(application_id=APP_ID + ".Panel", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.win = None
+        self.shown_at = 0
+
+    def do_activate(self):
+        if self.win:
+            if self.win.get_visible() and self.win.is_active():
+                self.win.hide()
+            else:
+                self.show()
+            return
+        self.win = Gtk.ApplicationWindow(application=self, title="TaskMate")
+        self.win.set_default_size(self.WIDTH, self.HEIGHT)
+        self.win.set_decorated(False)
+        self.win.set_resizable(False)
+        self.win.set_skip_taskbar_hint(True)
+        self.win.set_skip_pager_hint(True)
+        self.win.set_keep_above(True)
+        self.win.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+        try: self.win.set_icon_from_file(ICON)
+        except Exception: pass
+        self.view = WebKit2.WebView()
+        self.view.connect("decide-policy", self.on_policy)
+        self.win.add(self.view)
+        self.win.connect("delete-event", lambda *_: self.win.hide() or True)
+        self.win.connect("focus-out-event", self.on_focus_out)
+        self.view.load_uri(URL + "?panel=1")
+        self.hold()  # keep running while hidden
+        self.show()
+
+    def show(self):
+        # Top-right, under the top bar (works on X11; Wayland places it itself)
+        try:
+            mon = Gdk.Display.get_default().get_primary_monitor() or Gdk.Display.get_default().get_monitor(0)
+            area = mon.get_workarea()
+            self.win.move(area.x + area.width - self.WIDTH - 8, area.y + 6)
+        except Exception:
+            pass
+        self.win.show_all()
+        self.win.present()
+        self.shown_at = GLib.get_monotonic_time()
+        self.view.run_javascript("typeof load==='function'&&load()", None, None, None)
+
+    def on_focus_out(self, *_):
+        # Clicking elsewhere hides the panel (ignore the moment right after it opens)
+        if GLib.get_monotonic_time() - self.shown_at > 400_000:
+            self.win.hide()
+        return False
+
+    def on_policy(self, view, decision, kind):
+        if kind in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+            uri = decision.get_navigation_action().get_request().get_uri()
+            if uri.startswith("taskmate://"):
+                if uri == "taskmate://open":
+                    subprocess.Popen([sys.executable, os.path.abspath(__file__)])
+                self.win.hide()
+                decision.ignore(); return True
+            if not uri.startswith(URL.rstrip("/")) and not uri.startswith(f"http://127.0.0.1:{PORT}"):
+                if uri.lower().startswith(("http://", "https://", "mailto:")):
+                    subprocess.Popen(["xdg-open", uri])
+                    self.win.hide()
+                decision.ignore(); return True
+        return False
+
 if __name__ == "__main__":
     if WebKit2 is None:
         fallback_open(); sys.exit(0)
     GLib.set_prgname("taskmate")
     GLib.set_application_name("TaskMate")
+    if "--panel" in sys.argv:
+        sys.exit(Panel().run([sys.argv[0]]))
     sys.exit(App().run(sys.argv))
