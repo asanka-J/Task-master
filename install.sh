@@ -101,7 +101,7 @@ StartupNotify=true
 EOF
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 
-# Keyboard shortcut Super+Shift+T opens the quick panel (added next to any shortcuts you already have)
+# Keyboard shortcut Windows key + Shift + T opens the quick panel (added next to any shortcuts you already have)
 add_shortcut() {
   command -v gsettings >/dev/null || return 0
   local KB=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/taskmate-panel/
@@ -116,7 +116,7 @@ a.append(sys.argv[2]); print(str(a))' "$LIST" "$KB") || return 0
   local S="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB"
   gsettings set "$S" name "TaskMate panel"
   gsettings set "$S" command "env TASKMATE_PORT=$PORT /usr/bin/python3 $APP_DIR/taskmate_window.py --panel"
-  gsettings set "$S" binding "<Super><Shift>t"
+  gsettings set "$S" binding "<Super><Shift>t"   # GNOME calls the Windows key "Super" internally
 }
 [ -n "$DBUS_SESSION_BUS_ADDRESS" ] && { add_shortcut || true; }
 
@@ -143,7 +143,7 @@ echo
 echo "TaskMate $(cat "$APP_DIR/VERSION") is running."
 [ "$UPDATE" = 1 ] && exit 0
 echo "  Open it from the app grid (TaskMate) or the top-bar icon."
-echo "  Quick panel: Super+Shift+T, middle-click the top-bar icon, or choose Show Panel."
+echo "  Quick panel: Windows key + Shift + T, middle-click the top-bar icon, or choose Show Panel."
 echo "  In a browser: http://localhost:$PORT"
 if [ "$HOST" = "0.0.0.0" ]; then
   IP=$(hostname -I | awk '{print $1}')
