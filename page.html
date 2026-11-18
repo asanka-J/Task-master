@@ -38,7 +38,7 @@ button{cursor:pointer}
 .icon.on{background:var(--accent-soft);color:var(--accent-ink)}
 .pill{height:36px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink2);font-size:14px}
 .pill:hover{color:var(--ink);border-color:var(--mute)}
-.pill[disabled]{opacity:.45;cursor:default}
+.pill[hidden]{display:none}
 .pickwrap{position:relative;display:inline-block}
 .pickwrap input{position:absolute;inset:0;opacity:0;pointer-events:none}
 
@@ -54,6 +54,9 @@ button{cursor:pointer}
 .search{display:none;gap:8px;margin:14px 0 0}
 .search.open{display:flex}
 .search input{flex:1}
+select.field{-webkit-appearance:none;appearance:none;padding-right:30px;
+ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237F8C9D' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+ background-repeat:no-repeat;background-position:right 10px center;background-size:14px}
 .field{height:40px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);min-width:0}
 .field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 
@@ -91,41 +94,52 @@ section{margin-top:30px}
 .sechead h2{margin:0;font-size:17px;font-weight:500}
 .sechead .n{color:var(--mute);font-size:14px}
 .sechead .sp{flex:1}
-.sechead select{border:0;background:transparent;color:var(--mute);font-size:13px;padding:2px}
-.list{list-style:none;margin:0;padding:0}
+.sechead select{-webkit-appearance:none;appearance:none;border:0;background:transparent;color:var(--mute);font-size:13px;padding:4px 18px 4px 6px;border-radius:var(--r-sm);cursor:pointer;
+ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237F8C9D' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+ background-repeat:no-repeat;background-position:right 2px center;background-size:13px}
+.sechead select:hover{color:var(--ink);background-color:var(--surface)}
+/* Tiles: every task is its own card */
+.list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.list:empty{display:none}
+.list > .row,.list > .mrow{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+ box-shadow:0 1px 2px rgba(23,33,46,.04);transition:border-color .15s,box-shadow .15s}
+.list > .row:hover,.list > .mrow:hover{border-color:color-mix(in srgb,var(--mute) 45%,var(--line));box-shadow:0 3px 10px rgba(23,33,46,.07)}
 .empty{padding:14px 4px;color:var(--ink2)}
 .empty b{font-weight:500;color:var(--ink)}
 
 /* ---------- Task row ---------- */
-.row{position:relative;display:flex;gap:12px;align-items:flex-start;padding:12px 8px 12px 4px;border-radius:var(--r)}
-.row + .row{box-shadow:0 -1px 0 var(--line)}
-.row:hover{background:var(--surface)}
-.row:hover + .row{box-shadow:none}
-.grip{position:absolute;left:-18px;top:14px;color:var(--mute);opacity:0;cursor:grab;user-select:none}
+.row{position:relative;display:flex;gap:12px;align-items:flex-start;padding:12px 12px 12px 14px}
+.grip{position:absolute;left:-22px;top:15px;color:var(--mute);opacity:0;cursor:grab;user-select:none}
 .row:hover .grip{opacity:1}
 .row.dragging{opacity:.4}
 .check{flex:none;width:22px;height:22px;margin-top:1px;border-radius:50%;border:2px solid var(--p3);background:transparent;display:grid;place-items:center;color:transparent;padding:0;transition:background .15s,border-color .15s}
 .row.p1 .check{border-color:var(--p1)} .row.p2 .check{border-color:var(--p2)}
-.check:hover{color:var(--mute)}
+.check:hover{color:var(--p3);background:color-mix(in srgb,var(--p3) 18%,transparent)}
+.row.p1 .check:hover{color:var(--p1);background:color-mix(in srgb,var(--p1) 14%,transparent)}
+.row.p2 .check:hover{color:var(--p2);background:color-mix(in srgb,var(--p2) 16%,transparent)}
+.row.done .check:hover{background:var(--ok);color:#fff;opacity:.75}
+.actions .icon.done-btn{color:var(--ok)}
+.actions .icon.done-btn:hover{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
 .check .ic{width:13px;height:13px;stroke-width:3}
 .row.done .check{background:var(--ok);border-color:var(--ok);color:#fff}
 .row.just .check{animation:pop .35s ease}
 @keyframes pop{50%{transform:scale(1.25)}}
 .body{flex:1;min-width:0}
 .title{cursor:text;overflow-wrap:anywhere}
+.row.done .meta .tag{background:transparent;border-color:var(--line)}
 .row.done .title{color:var(--mute);text-decoration:line-through;text-decoration-color:var(--p3)}
 .meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .meta:empty{display:none}
-.tag{font-size:12.5px;line-height:20px;padding:0 8px;border-radius:999px;background:var(--bg);color:var(--ink2)}
-.row:hover .tag{background:var(--bg)}
+.tag{font-size:12.5px;line-height:20px;padding:0 8px;border-radius:999px;background:var(--bg);color:var(--ink2);border:1px solid transparent}
+.tag.next,.tag.from{border-color:transparent}
 .tag.from{color:var(--warn);background:var(--warn-soft)}
-.tag.missed{color:var(--p1);background:transparent;padding:0}
+.tag.missed{color:var(--p1);background:transparent;padding:0;border:0}
 .tag.next{color:var(--accent-ink);background:var(--accent-soft);font-weight:500}
 .note{margin-top:6px;font-size:14px;color:var(--ink2);overflow-wrap:anywhere;
  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .note p{margin:0 0 3px}.note ul,.note ol{margin:2px 0;padding-left:20px}
 .note a{color:var(--accent-ink)}
-a.lchip{display:inline-flex;align-items:center;gap:4px;padding:0 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);text-decoration:none;font-size:12.5px;line-height:20px;vertical-align:1px}
+a.lchip{border:1px solid transparent;display:inline-flex;align-items:center;gap:4px;padding:0 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);text-decoration:none;font-size:12.5px;line-height:20px;vertical-align:1px}
 a.lchip .ic{width:12px;height:12px}
 a.lchip:hover{text-decoration:underline}
 .actions{display:flex;gap:2px;opacity:0;transition:opacity .12s}
@@ -135,15 +149,14 @@ a.lchip:hover{text-decoration:underline}
 .actions .icon:hover{background:var(--bg)}
 .actions .icon.danger:hover{color:var(--p1)}
 .actions .btn{height:30px;padding:0 10px;font-size:13px}
-.row.next{background:var(--surface);box-shadow:0 0 0 1px var(--line) !important;padding:14px 10px 14px 6px;margin-bottom:6px}
+.list > .row.next{padding:16px 12px 16px 16px;background:linear-gradient(90deg,var(--accent-soft),var(--surface) 60%);border-color:color-mix(in srgb,var(--accent) 35%,var(--line));overflow:hidden}
+.row.next::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}
 .row.next .title{font-size:17px;font-weight:500}
 .row.next .actions{opacity:1}
-.row.next + .row{box-shadow:none}
 
 /* meetings */
-.mrow{display:flex;gap:14px;align-items:flex-start;padding:10px 8px 10px 4px;border-radius:var(--r)}
-.mrow + .mrow{box-shadow:0 -1px 0 var(--line)}
-.mrow:hover{background:var(--surface)}
+.mrow{position:relative;display:flex;gap:14px;align-items:flex-start;padding:12px 12px 12px 14px}
+
 .mrow:hover .actions,.mrow:focus-within .actions{opacity:1}
 a.btn.join{display:inline-flex;align-items:center;text-decoration:none;margin-top:-2px}
 .mtime{flex:none;width:52px;font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--meet);padding-top:1px}
@@ -156,12 +169,16 @@ a.btn.join{display:inline-flex;align-items:center;text-decoration:none;margin-to
 .carry{background:var(--warn-soft);border-radius:var(--r-lg);padding:14px 16px 6px}
 .carry .chead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
 .carry .chead p{margin:0;flex:1;color:var(--warn)}
-.carry .row:hover{background:color-mix(in srgb,var(--surface) 60%,transparent)}
-.carry .row + .row{box-shadow:0 -1px 0 color-mix(in srgb,var(--warn) 18%,transparent)}
+.carry{padding-bottom:14px}
+.carry .list > .row{border-color:color-mix(in srgb,var(--warn) 22%,transparent)}
 
 /* completed */
 details.done{margin-top:26px}
 details.done summary{list-style:none;cursor:pointer;padding:6px 4px;color:var(--ink2);display:flex;gap:8px;align-items:center}
+details.done summary .sp{flex:1}
+details.done .list > .row{background:transparent;box-shadow:none;border-style:dashed}
+.clear{border:0;background:none;color:var(--mute);font-size:13px;padding:4px 6px;border-radius:var(--r-sm)}
+.clear:hover{color:var(--p1);background:var(--surface)}
 details.done summary::-webkit-details-marker{display:none}
 details.done summary .ic{transition:transform .15s;width:16px;height:16px}
 details.done[open] summary .ic{transform:rotate(90deg)}
@@ -353,6 +370,15 @@ function linkChip(url){
   label=seg&&seg.length<=28?decodeURIComponent(seg):u.hostname.replace(/^www\./,'')}catch(e){}
  return `<a class="lchip" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(label)}${svg('ext')}</a>`;
 }
+// Plain notes that are only links (after dropping a repeated title) show as chips next to the tags
+function linkOnly(n,title){
+ if(!n||isHTML(n))return null;
+ let txt=n.trim();
+ if(title&&txt.toLowerCase().startsWith(title.toLowerCase()))txt=txt.slice(title.length).replace(/^[\s\-–:,.]+/,'');
+ const urls=txt.match(/https?:\/\/\S+/g);
+ if(!urls)return null;
+ return txt.replace(/https?:\/\/\S+/g,'').replace(/[\s,;]+/g,'')===''?urls:null;
+}
 function notesView(n,title){
  if(!n)return '';
  if(!isHTML(n)){
@@ -418,6 +444,7 @@ function editRow(t){
 // ctx: today | carry | anytime | done | past | future | search
 function row(t,ctx,opts={}){
  if(editing===t.id)return editRow(t);
+ const lo=linkOnly(t.notes,t.title);
  const T=today(),past=!t.done&&t.due&&t.due<T;
  const canDrag=(ctx==='today'||ctx==='anytime'||ctx==='future')&&!t.done&&sortBy()==='manual'&&!$('#q').value;
  let tags='';
@@ -430,6 +457,7 @@ function row(t,ctx,opts={}){
  let acts='';
  if(!t.done){
   if(opts.next)acts+=`<button class="btn primary" onclick="toggle(${t.id},true)">Mark done</button><button class="btn soft" onclick="later(${t.id})">Later</button>`;
+  else acts+=`<button class="icon done-btn" onclick="toggle(${t.id},true)" title="Mark done" aria-label="Mark done">${svg('check')}</button>`;
   if(past)acts+=`<button class="btn soft" onclick="moveTo(${t.id},'${T}','Moved to today')">Move to today</button>`;
   else if(ctx==='anytime')acts+=`<button class="icon" onclick="moveTo(${t.id},'${T}','Added to today')" title="Do today" aria-label="Do today">${svg('prevday')}</button>`;
   else if(!opts.next)acts+=`<button class="icon" onclick="moveTo(${t.id},'${addDays(t.due||T,1)}','Moved to ${t.due===T||!t.due?'tomorrow':'the next day'}')" title="Move to ${t.due===T?'tomorrow':'the next day'}" aria-label="Move to next day">${svg('next')}</button>`;
@@ -438,10 +466,10 @@ function row(t,ctx,opts={}){
   <button class="icon danger" onclick="del(${t.id})" title="Delete" aria-label="Delete">${svg('trash')}</button>`;
  return `<li class="row p${t.priority} ${t.done?'done':''} ${opts.next?'next':''} ${justDone===t.id?'just':''}" data-id="${t.id}" ${canDrag?'draggable="true"':''}>
   ${canDrag?`<span class="grip" title="Drag to reorder">${svg('grip')}</span>`:''}
-  <button class="check" role="checkbox" aria-checked="${!!t.done}" aria-label="${t.done?'Mark not done':'Mark done'}: ${esc(t.title)}" onclick="toggle(${t.id},${!t.done})">${svg('check')}</button>
+  <button class="check" role="checkbox" aria-checked="${!!t.done}" aria-label="${t.done?'Mark not done':'Mark done'}: ${esc(t.title)}" title="${t.done?'Mark not done':'Mark done'}" onclick="toggle(${t.id},${!t.done})">${svg('check')}</button>
   <div class="body"><div class="title" onclick="startEdit(${t.id})" title="Click to edit">${esc(t.title)}</div>
-   <div class="meta">${tags}</div>
-   ${t.notes?`<div class="note">${notesView(t.notes,t.title)}</div>`:''}</div>
+   <div class="meta">${tags}${lo?lo.map(linkChip).join(''):''}</div>
+   ${t.notes&&!lo?`<div class="note">${notesView(t.notes,t.title)}</div>`:''}</div>
   <div class="actions">${acts}</div></li>`;
 }
 function meetRow(t){
@@ -474,7 +502,7 @@ function render(){
  // Header
  const w=dayWord(day);
  $('#dayTitle').innerHTML=w?`${w}<small>${esc(longDate(day))}</small>`:`${esc(D(day).toLocaleDateString('en-GB',{weekday:'long'}))}<small>${esc(D(day).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:D(day).getFullYear()!==new Date().getFullYear()?'numeric':undefined}))}</small>`;
- $('#goToday').disabled=day===T;
+ $('#goToday').hidden=day===T;
  $('#pick').value=day;
  $('#qTitle').placeholder=day===T?'Add a task for today':`Add a task for ${(w||shortDate(day)).toLowerCase()}`;
 
@@ -516,8 +544,9 @@ function render(){
 
  if(anytime.length)h+=`<section><div class="sechead"><h2>No date</h2><span class="n">${anytime.length}</span></div>${list(anytime,'anytime','dragList2')}</section>`;
 
- if(doneHere.length)h+=`<details class="done" ${day<T?'open':''} id="doneBox"><summary>${svg('chev')}Done ${day===T?'today':day<T&&w?w.toLowerCase():'this day'} (${doneHere.length})</summary>
-   ${list(doneHere,'done')}<button class="linkbtn" onclick="clearDone()">Delete all completed tasks</button></details>`;
+ if(doneHere.length)h+=`<details class="done" ${day<T?'open':''} id="doneBox"><summary>${svg('chev')}Done ${day===T?'today':day<T&&w?w.toLowerCase():'this day'} (${doneHere.length})<span class="sp"></span>
+   <button class="clear" onclick="event.preventDefault();clearDone()">Clear completed</button></summary>
+   ${list(doneHere,'done')}</details>`;
 
  const wasOpen=$('#doneBox')&&$('#doneBox').open;
  $('#main').innerHTML=h;

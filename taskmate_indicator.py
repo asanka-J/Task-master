@@ -452,23 +452,17 @@ class Indicator:
     def task_item(self, t, siblings, anytime=False, prefix=None):
         proj = f"   ·   {t['project']}" if t["project"] else ""
         mi = Gtk.MenuItem(label=(prefix or f"{self.dot(t)}   ") + short(t["title"], 40) + proj)
+        # Keep this short: Ubuntu opens submenus inside the menu, so long ones hide the tasks below
         sub = Gtk.Menu()
-        info = f"{PN[t['priority']]} priority" + (f"   ·   🏷️ {t['project']}" if t["project"] else "")
-        self.item(sub, info, sensitive=False)
-        if t["notes"]: self.item(sub, "📝   " + short(plain(t["notes"]), 56), sensitive=False)
-        self.sep(sub)
         self.item(sub, "✅   Mark done", lambda i=t["id"]: self.done(i))
         ids = [x["id"] for x in siblings]
         idx = ids.index(t["id"]) if t["id"] in ids else 0
         if idx > 0:
             self.item(sub, "🎯   Do next", lambda i=t["id"]: self.move(i, "top", ids))
-            self.item(sub, "🔼   Move up", lambda i=t["id"]: self.move(i, "up", ids))
-        if idx < len(ids) - 1:
-            self.item(sub, "🔽   Move down", lambda i=t["id"]: self.move(i, "down", ids))
         if anytime:
             self.item(sub, "📌   Do today", lambda i=t["id"]: self.set_due(i, iso(today())))
-        self.item(sub, "➡️   Move to tomorrow", lambda i=t["id"]: self.set_due(i, iso(today() + timedelta(days=1))))
-        self.sep(sub)
+        else:
+            self.item(sub, "➡️   Move to tomorrow", lambda i=t["id"]: self.set_due(i, iso(today() + timedelta(days=1))))
         self.item(sub, "✏️   Edit…", lambda tt=t: self.dialog(tt))
         self.item(sub, "🗑️   Delete", lambda i=t["id"]: self.delete(i))
         mi.set_submenu(sub)
