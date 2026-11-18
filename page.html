@@ -39,7 +39,17 @@ a.join{display:inline-block;background:var(--mt);color:#fff;text-decoration:none
 .task .main{flex:1;min-width:0}.task .ttl{font-weight:500;word-wrap:break-word}
 .task.done .ttl{text-decoration:line-through;color:var(--mute)}
 .meta{font-size:12.5px;color:var(--mute);display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
-.notes{font-size:13.5px;color:var(--mute);white-space:pre-wrap;margin-top:4px}
+.notes{font-size:13.5px;color:var(--mute);margin-top:4px;overflow-wrap:anywhere}
+.notes p,.ed p{margin:0 0 4px}.notes ul,.notes ol,.ed ul,.ed ol{margin:2px 0 4px;padding-left:22px}
+.notes a,.ed a{color:var(--acc)}.notes code,.ed code{background:var(--bg);padding:0 4px;border-radius:4px;font-size:12.5px}
+.notes blockquote,.ed blockquote{margin:2px 0;padding-left:10px;border-left:3px solid var(--line)}
+.rte{border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
+.rte .tb{display:flex;gap:2px;flex-wrap:wrap;padding:4px;border-bottom:1px solid var(--line);background:var(--card)}
+.rte .tb button{background:transparent;color:var(--ink);border:none;padding:3px 8px;font-size:13px;border-radius:6px;min-width:28px}
+.rte .tb button:hover{background:var(--bg)}
+.rte .ed{min-height:60px;max-height:320px;overflow:auto;padding:8px 10px;outline:none;font-size:14px}
+.rte .ed:empty:before{content:attr(data-ph);color:var(--mute)}
+details.addNotes summary{font-size:13px;margin:0}
 .p1{color:var(--hi);font-weight:600}.p2{color:var(--md)}.p3{color:var(--lo)}.over{color:var(--hi);font-weight:600}
 .missed{color:var(--hi);font-weight:600}
 .rel{color:var(--mt);font-weight:600}.soon{color:var(--hi)}
@@ -49,6 +59,9 @@ a.join{display:inline-block;background:var(--mt);color:#fff;text-decoration:none
 .empty{color:var(--mute);text-align:center;padding:12px}
 .sec{margin-top:10px;padding-top:6px}
 .foot{text-align:center;margin-top:10px}
+.upd{font-size:13px;color:var(--mute)}
+button.link{background:none;border:none;color:var(--acc);padding:0;font-size:13px;text-decoration:underline}
+#updMsg.ok{color:var(--ok)}#updMsg.err{color:var(--hi)}
 </style></head><body><div class="wrap">
 
 <div class="top">
@@ -82,6 +95,7 @@ a.join{display:inline-block;background:var(--mt);color:#fff;text-decoration:none
  <input name="project" placeholder="Project" list="projects" style="grid-column:span 2">
  <select name="priority" class="tOnly" style="grid-column:span 2"><option value="1">High</option><option value="2" selected>Medium</option><option value="3">Low</option></select>
  <input name="link" class="mOnly" placeholder="Meeting link (optional)" style="grid-column:span 2">
+ <details class="full addNotes" id="addNotesBox"><summary>Add notes</summary><div id="addNotesEd"></div></details>
  <button class="full">Add</button>
 </form><datalist id="projects"></datalist>
 </div>
@@ -95,6 +109,7 @@ a.join{display:inline-block;background:var(--mt);color:#fff;text-decoration:none
  <div id="main"></div>
 </div>
 <div class="foot"><button class="ghost" id="clearDone">Delete all completed</button></div>
+<div class="foot upd"><span id="verLbl"></span> · <button class="link" id="updBtn">Check for updates</button> <span id="updMsg"></span></div>
 </div>
 <script>
 let tasks=[],editing=null,day=null,dueRel=0;
@@ -124,6 +139,61 @@ function rel(t){
 }
 const doneOn=t=>(t.completed||'').slice(0,10);
 
+// ---------- Rich text notes ----------
+const OK_TAGS=new Set(['B','STRONG','I','EM','U','S','STRIKE','DEL','A','UL','OL','LI','P','BR','DIV','SPAN','CODE','PRE','BLOCKQUOTE','H3','H4']);
+const DROP_TAGS=new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','LINK','META','TEMPLATE','SVG','MATH','FORM','INPUT','BUTTON','TEXTAREA','SELECT','IMG','VIDEO','AUDIO','HEAD','TITLE']);
+function clean(html){
+ const doc=new DOMParser().parseFromString('<body>'+(html||'')+'</body>','text/html');
+ (function walk(node){
+  [...node.childNodes].forEach(n=>{
+   if(n.nodeType===8){n.remove();return}
+   if(n.nodeType!==1)return;
+   if(DROP_TAGS.has(n.tagName)){n.remove();return}
+   walk(n);
+   if(!OK_TAGS.has(n.tagName)){n.replaceWith(...n.childNodes);return}
+   const href=n.tagName==='A'?(n.getAttribute('href')||'').trim():'';
+   [...n.attributes].forEach(a=>n.removeAttribute(a.name));
+   if(n.tagName==='A'){if(/^(https?:|mailto:)/i.test(href))n.setAttribute('href',href);else n.replaceWith(...n.childNodes)}
+  });
+ })(doc.body);
+ const out=doc.body.innerHTML.trim();
+ return doc.body.textContent.trim()===''?'':out;
+}
+const isHTML=s=>/<\/?[a-z][\s\S]*>/i.test(s||'');
+function notesView(n){
+ if(!isHTML(n))return esc(n).replace(/\n/g,'<br>');
+ return clean(n).replace(/<a href=/g,'<a target="_blank" rel="noopener" href=');
+}
+function editor(id,html){
+ const v=isHTML(html)?clean(html):esc(html||'').replace(/\n/g,'<br>');
+ return `<div class="rte"><div class="tb">
+  <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+  <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+  <button type="button" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+  <button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+  <button type="button" data-cmd="insertUnorderedList" title="Bullet list">• List</button>
+  <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+  <button type="button" data-cmd="link" title="Add link">🔗 Link</button>
+  <button type="button" data-cmd="removeFormat" title="Clear formatting">✕ Clear</button>
+ </div><div class="ed" id="${id}" contenteditable="true" data-ph="Notes…">${v}</div></div>`;
+}
+document.addEventListener('mousedown',e=>{
+ const b=e.target.closest('.rte .tb button');if(!b)return;
+ e.preventDefault();
+ const ed=b.closest('.rte').querySelector('.ed');
+ if(document.activeElement!==ed)ed.focus();
+ const c=b.dataset.cmd;
+ if(c==='link'){let u=prompt('Link address (https://…)');if(!u)return;if(!/^(https?:|mailto:)/i.test(u))u='https://'+u;document.execCommand('createLink',false,u)}
+ else document.execCommand(c,false,null);
+});
+// Paste: keep formatting but sanitise it
+document.addEventListener('paste',e=>{
+ const ed=e.target.closest&&e.target.closest('.ed');if(!ed)return;
+ const h=e.clipboardData.getData('text/html'),t=e.clipboardData.getData('text/plain');
+ e.preventDefault();
+ document.execCommand('insertHTML',false,h?clean(h):esc(t).replace(/\n/g,'<br>'));
+});
+
 async function load(){tasks=await api('GET','/api/tasks');render();}
 
 function srt(list){return $('#sort').value==='priority'?[...list].sort((a,b)=>a.priority-b.priority):list}
@@ -136,7 +206,7 @@ function editRow(t){
   <select id="e_priority">${[1,2,3].map(p=>`<option value="${p}" ${p==t.priority?'selected':''}>${PN[p]}</option>`).join('')}</select></div>
   <div class="row"><input id="e_due" type="date" value="${esc(t.due)}"><input id="e_time" type="time" value="${esc(t.time)}">
   <input id="e_link" value="${esc(t.link)}" placeholder="Meeting link"></div>
-  <textarea id="e_notes" rows="2" placeholder="Notes">${esc(t.notes)}</textarea>
+  ${editor('e_notes',t.notes)}
   <div class="acts" style="justify-content:flex-start"><button onclick="saveEdit(${t.id})">Save</button><button class="ghost" onclick="editing=null;render()">Cancel</button></div>
  </div></div></div>`;
 }
@@ -166,7 +236,7 @@ function row(t,ctx){
   ${canDrag?'<span class="drag" title="Drag to reorder">⋮⋮</span>':''}
   <input type="checkbox" ${t.done?'checked':''} onchange="toggle(${t.id},this.checked)">
   <div class="main"><div class="ttl">${isM(t)?'📅 ':''}${esc(t.title)}</div><div class="meta">${meta}</div>
-   ${t.notes?`<div class="notes">${esc(t.notes)}</div>`:''}</div>
+   ${t.notes?`<div class="notes">${notesView(t.notes)}</div>`:''}</div>
   <div class="acts">${acts}</div></div>`;
 }
 const list=(items,ctx,empty)=>items.length?items.map(t=>row(t,ctx)).join(''):(empty?`<div class="empty">${empty}</div>`:'');
@@ -231,7 +301,7 @@ async function saveEdit(id){
  const kind=$('#e_kind').value;let due=$('#e_due').value;
  if(kind==='meeting'&&!due&&$('#e_time').value)due=today();
  await api('PUT','/api/tasks/'+id,{title:$('#e_title').value.trim()||'Untitled',kind,project:$('#e_project').value.trim(),
-  priority:+$('#e_priority').value,due,time:$('#e_time').value,link:$('#e_link').value.trim(),notes:$('#e_notes').value});
+  priority:+$('#e_priority').value,due,time:$('#e_time').value,link:$('#e_link').value.trim(),notes:clean($('#e_notes').innerHTML)});
  editing=null;load();
 }
 // Add form
@@ -240,19 +310,19 @@ function setAddDue(v){$('#addDue').value=v;document.querySelectorAll('.quick [da
 document.querySelectorAll('.quick [data-q]').forEach(b=>b.onclick=()=>{dueRel=b.dataset.q===''?'':+b.dataset.q;setAddDue(dueRel===''?'':addDays(today(),dueRel))});
 $('#addDue').oninput=e=>setAddDue(e.target.value);
 $('#kindSel').onchange=e=>$('#addForm').classList.toggle('isMeeting',e.target.value==='meeting');
-$('#addForm').onsubmit=async e=>{e.preventDefault();const fd=Object.fromEntries(new FormData(e.target));
+$('#addForm').onsubmit=async e=>{e.preventDefault();const fd=Object.fromEntries(new FormData(e.target));fd.notes=clean($('#a_notes').innerHTML);
  if(fd.kind==='meeting'){if(!fd.time){alert('Please set a start time for the meeting');return}if(!fd.due)fd.due=today();}
  else{fd.time='';fd.link='';}
  await api('POST','/api/tasks',fd);
  $('#addMsg').textContent=fd.due&&fd.due!==day?`Added for ${dayName(fd.due).toLowerCase()==='tomorrow'?'tomorrow':nice(fd.due)}`:'';
  setTimeout(()=>$('#addMsg').textContent='',4000);
- e.target.title.value='';e.target.time.value='';e.target.link.value='';e.target.title.focus();load();};
+ e.target.title.value='';e.target.time.value='';e.target.link.value='';$('#a_notes').innerHTML='';$('#addNotesBox').open=false;e.target.title.focus();load();};
 $('#clearDone').onclick=async()=>{if(confirm('Delete ALL completed items, on every day?')){await api('DELETE','/api/tasks/completed');load();}};
 ['#q','#fp','#sort'].forEach(s=>$(s).addEventListener('input',render));
 $('#prev').onclick=()=>setDay(addDays(day,-1));
 $('#nextDay').onclick=()=>setDay(addDays(day,1));
 $('#goToday').onclick=()=>setDay(today());
-$('#pickBtn').onclick=()=>{try{$('#pick').showPicker()}catch(e){$('#pick').focus()}};
+$('#pickBtn').onclick=()=>{const p=$('#pick');try{p.showPicker()}catch(e){p.style.cssText='width:150px';$('#pickBtn').style.display='none';p.focus()}};
 $('#pick').onchange=e=>e.target.value&&setDay(e.target.value);
 
 function bindDrag(sel){
@@ -265,8 +335,37 @@ function bindDrag(sel){
    const r=el.getBoundingClientRect();box.insertBefore(src,e.clientY<r.top+r.height/2?el:el.nextSibling);};
  });
 }
+// Updates
+let curVer='';
+async function showVer(){try{curVer=(await api('GET','/api/version')).version;$('#verLbl').textContent='TaskMate v'+curVer}catch(e){}}
+function updMsg(t,cls=''){const m=$('#updMsg');m.textContent=t;m.className=cls}
+async function checkUpd(){
+ const b=$('#updBtn');b.disabled=true;updMsg('Checking…');
+ try{const r=await api('POST','/api/update/check');
+  if(r.error){updMsg('Could not check: '+r.error,'err');b.textContent='Check for updates';b.onclick=checkUpd}
+  else if(r.update){updMsg(`Version ${r.latest} is available.`,'ok');b.textContent=`Install ${r.latest}`;b.onclick=installUpd}
+  else{updMsg(`You're up to date.`,'ok')}
+ }catch(e){updMsg('Could not check for updates.','err')}
+ b.disabled=false;
+}
+async function installUpd(){
+ if(!confirm('Install the update now? TaskMate will restart for a few seconds.'))return;
+ const b=$('#updBtn');b.disabled=true;updMsg('Updating… this takes a few seconds.');
+ try{await api('POST','/api/update/install')}catch(e){}
+ const from=curVer,t0=Date.now();
+ const poll=setInterval(async()=>{
+  try{const v=(await api('GET','/api/version')).version;
+   if(v&&v!==from){clearInterval(poll);updMsg(`Updated to ${v}. Reloading…`,'ok');setTimeout(()=>location.reload(),1200);return}}catch(e){}
+  if(Date.now()-t0>120000){clearInterval(poll);b.disabled=false;
+   updMsg('Update did not finish. See ~/.local/share/taskmate/update.log','err')}
+ },2000);
+}
+$('#updBtn').onclick=checkUpd;
+showVer();
+
+$('#addNotesEd').innerHTML=editor('a_notes','');
 day=today();setAddDue(today());load();
-const busy=()=>editing!==null||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+const busy=()=>editing!==null||document.activeElement.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
 let lastDay=today();
 setInterval(()=>{if(today()!==lastDay){if(day===lastDay)day=today();lastDay=today();setAddDue(today())}if(!busy())load()},30000);
 setInterval(()=>{if(!busy())render()},15000);

@@ -6,6 +6,8 @@ A small task and meeting list for Ubuntu. Runs in the background, lives in the t
 - Carry over unfinished tasks to today
 - Meetings with reminders 10 minutes before and at start time
 - Top-bar menu: add, complete, reorder, move to tomorrow
+- Opens in its own app window (TaskMate in the app grid)
+- Rich-text notes: bold, italic, lists, links
 - Updates itself from this repo's GitHub Releases
 
 ## Install
@@ -15,7 +17,7 @@ curl -sL https://github.com/asanka-J/Task-master/releases/latest/download/taskma
 cd taskmate && bash install.sh
 ```
 
-Open http://localhost:8765, or click the icon in the top bar.
+Open TaskMate from the app grid or the top-bar icon. It also works in a browser at http://localhost:8765.
 
 ## Release a new version
 

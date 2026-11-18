@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """TaskMate: a tiny self-hosted task + meeting list. Python stdlib only (no pip needed)."""
-import json, os, sqlite3
+import json, os, shutil, sqlite3, subprocess, sys
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
 
@@ -8,7 +8,27 @@ DATA_DIR = os.path.expanduser(os.environ.get("TASKMATE_DATA", "~/.local/share/ta
 DB = os.path.join(DATA_DIR, "tasks.db")
 HOST = os.environ.get("TASKMATE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("TASKMATE_PORT", "8765"))
-MEETING_AUTO_DONE_MIN = 60  # meetings are auto-completed this long after they start
+MEETING_AUTO_DONE_MIN = 60
+HERE = os.path.dirname(os.path.abspath(__file__))
+UPDATER = os.path.join(HERE, "taskmate_update.py")
+
+def version():
+    try: return open(os.path.join(HERE, "VERSION")).read().strip()
+    except OSError: return "0.0.0"
+
+def start_update():
+    """Run the updater outside this service, so restarting the service doesn't kill it."""
+    logpath = os.path.join(DATA_DIR, "update.log")
+    cmd = [sys.executable, UPDATER, "--install"]
+    if shutil.which("systemd-run"):
+        unit = f"taskmate-update-{int(datetime.now().timestamp())}"
+        r = subprocess.run(["systemd-run", "--user", "--collect", "--quiet", "--unit", unit,
+                            "-p", f"StandardOutput=file:{logpath}", "-p", "StandardError=inherit"] + cmd,
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            return
+    # Fallback: detached process (may be stopped if the service restarts before it finishes)
+    subprocess.Popen(cmd, stdout=open(logpath, "w"), stderr=subprocess.STDOUT, start_new_session=True)  # meetings are auto-completed this long after they start
 
 def db():
     c = sqlite3.connect(DB)
@@ -61,6 +81,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             return self.send(200, PAGE, "text/html; charset=utf-8")
+        if self.path == "/api/version":
+            return self.send(200, json.dumps({"version": version()}))
         if self.path.startswith("/api/tasks"):
             now = datetime.now()
             cutoff = (now - timedelta(minutes=MEETING_AUTO_DONE_MIN)).strftime("%Y-%m-%d %H:%M")
@@ -105,6 +127,18 @@ class H(BaseHTTPRequestHandler):
                 for pos, tid in enumerate(full):
                     c.execute("UPDATE tasks SET position=? WHERE id=?", (pos, tid))
             return self.send(200, '{"ok":true}')
+        if self.path == "/api/update/check":
+            try:
+                r = subprocess.run([sys.executable, UPDATER, "--check"], capture_output=True, text=True, timeout=60)
+                return self.send(200, r.stdout or '{"error":"no response from updater"}')
+            except Exception as e:
+                return self.send(200, json.dumps({"error": str(e)}))
+        if self.path == "/api/update/install":
+            try:
+                start_update()
+                return self.send(200, json.dumps({"started": True, "from": version()}))
+            except Exception as e:
+                return self.send(500, json.dumps({"error": str(e)}))
         if self.path == "/api/carryover":
             # Move every unfinished task dated before `to` onto `to`
             to = self.body().get("to") or datetime.now().strftime("%Y-%m-%d")

@@ -27,7 +27,7 @@ HOST="${HOST:-0.0.0.0}"
 mkdir -p "$APP_DIR" "$UNIT_DIR" "$CFG_DIR"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 cp "$SRC/taskmate.py" "$SRC/page.html" "$SRC/taskmate_indicator.py" "$SRC/taskmate_update.py" \
-   "$SRC/icon.svg" "$SRC/VERSION" "$APP_DIR/"
+   "$SRC/taskmate_window.py" "$SRC/icon.svg" "$SRC/icon-app.svg" "$SRC/VERSION" "$APP_DIR/"
 cp "$SRC/install.sh" "$SRC/uninstall.sh" "$APP_DIR/" 2>/dev/null || true
 
 if [ -n "$REPO" ]; then
@@ -36,11 +36,23 @@ if [ -n "$REPO" ]; then
   echo "TASKMATE_REPO=$REPO" >> "$CFG_DIR/config.tmp"; mv "$CFG_DIR/config.tmp" "$CFG_DIR/config"
 fi
 
-# Top-bar indicator needs the AppIndicator GTK bindings
+# System packages: top-bar icon (AppIndicator) and the app window (WebKitGTK)
+PKGS=""
 if ! python3 -c "import gi; gi.require_version('AyatanaAppIndicator3','0.1')" 2>/dev/null \
    && ! python3 -c "import gi; gi.require_version('AppIndicator3','0.1')" 2>/dev/null; then
-  echo "Installing top-bar icon support (needs sudo)..."
-  sudo apt-get install -y python3-gi gir1.2-ayatanaappindicator3-0.1
+  PKGS="$PKGS python3-gi gir1.2-ayatanaappindicator3-0.1"
+fi
+if ! python3 -c "import gi; gi.require_version('WebKit2','4.1')" 2>/dev/null \
+   && ! python3 -c "import gi; gi.require_version('WebKit2','4.0')" 2>/dev/null; then
+  if apt-cache show gir1.2-webkit2-4.1 >/dev/null 2>&1; then PKGS="$PKGS gir1.2-webkit2-4.1"; else PKGS="$PKGS gir1.2-webkit2-4.0"; fi
+fi
+if [ -n "$PKGS" ]; then
+  if [ "$UPDATE" = 1 ] && ! sudo -n true 2>/dev/null; then
+    echo "Note: missing packages ($PKGS). Run 'bash $APP_DIR/install.sh' in a terminal to add them."
+  else
+    echo "Installing system packages:$PKGS (needs sudo)..."
+    sudo apt-get install -y $PKGS || echo "Could not install$PKGS. The window will fall back to your browser."
+  fi
 fi
 
 cat > "$UNIT_DIR/taskmate.service" <<EOF
@@ -69,13 +81,16 @@ mkdir -p "$HOME/.local/share/applications"
 cat > "$HOME/.local/share/applications/taskmate.desktop" <<EOF
 [Desktop Entry]
 Name=TaskMate
-Comment=My task list
-Exec=xdg-open http://localhost:$PORT
-Icon=checkbox-checked-symbolic
+Comment=My tasks and meetings
+Exec=env TASKMATE_PORT=$PORT /usr/bin/python3 $APP_DIR/taskmate_window.py
+Icon=$APP_DIR/icon-app.svg
 Terminal=false
 Type=Application
-Categories=Office;
+Categories=Office;ProjectManagement;
+StartupWMClass=taskmate
+StartupNotify=true
 EOF
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 
 # Start the top-bar icon on login, and start it now
 mkdir -p "$HOME/.config/autostart"
@@ -87,15 +102,20 @@ Type=Application
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 EOF
-pkill -f taskmate_indicator.py 2>/dev/null || true
-sleep 1
-TASKMATE_PORT=$PORT nohup /usr/bin/python3 "$APP_DIR/taskmate_indicator.py" >/dev/null 2>&1 &
-disown || true
+# When run from the web page's updater there is no desktop session; the running
+# top-bar icon notices the new VERSION and restarts itself instead.
+if [ -n "$DISPLAY$WAYLAND_DISPLAY" ]; then
+  pkill -f taskmate_indicator.py 2>/dev/null || true
+  sleep 1
+  TASKMATE_PORT=$PORT nohup /usr/bin/python3 "$APP_DIR/taskmate_indicator.py" >/dev/null 2>&1 &
+  disown || true
+fi
 
 echo
 echo "TaskMate $(cat "$APP_DIR/VERSION") is running."
 [ "$UPDATE" = 1 ] && exit 0
-echo "  On this PC:   http://localhost:$PORT"
+echo "  Open it from the app grid (TaskMate) or the top-bar icon."
+echo "  In a browser: http://localhost:$PORT"
 if [ "$HOST" = "0.0.0.0" ]; then
   IP=$(hostname -I | awk '{print $1}')
   echo "  On your phone (same Wi-Fi): http://$IP:$PORT"

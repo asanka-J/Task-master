@@ -2,7 +2,7 @@
 """TaskMate top-bar indicator for Ubuntu (GNOME AppIndicator).
 Shows today's tasks and meetings, meeting reminders (10 min before and at start),
 carry-over of unfinished tasks, and quick add for today/tomorrow."""
-import json, os, re, shutil, subprocess, threading, urllib.request
+import json, os, re, shutil, subprocess, sys, threading, urllib.request
 from datetime import date, datetime, timedelta
 import gi
 gi.require_version("Gtk", "3.0")
@@ -33,6 +33,22 @@ def api(method, path, body=None):
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=3) as r:
         return json.loads(r.read() or b"null")
+
+from html.parser import HTMLParser
+from html import escape as html_escape
+
+class _Text(HTMLParser):
+    def __init__(self): super().__init__(); self.out = []
+    def handle_starttag(self, tag, attrs):
+        if tag in ("br", "p", "div", "li", "ul", "ol"): self.out.append(" ")
+        if tag == "li": self.out.append("• ")
+    def handle_data(self, d): self.out.append(d)
+
+def plain(html):
+    """Rich-text notes (HTML) as plain text for menus and notifications."""
+    if not html or "<" not in html: return html or ""
+    p = _Text(); p.feed(html)
+    return re.sub(r"\s+", " ", "".join(p.out)).strip()
 
 def short(s, n=46):
     return s if len(s) <= n else s[: n - 1] + "…"
@@ -133,6 +149,7 @@ class Indicator:
         self.last_day = None
         self.update = None        # dict from updater --check when a newer version exists
         self.updating = False
+        self.started_version = self.version()
         self.refresh()
         GLib.timeout_add_seconds(30, self.refresh)
         GLib.timeout_add_seconds(15, self.tick)
@@ -209,6 +226,9 @@ class Indicator:
 
     # ---------- reminders ----------
     def tick(self):
+        if self.version() != self.started_version:
+            # A new version was installed (e.g. from the web page): restart into it
+            os.execv(sys.executable, [sys.executable, os.path.join(APP_DIR, "taskmate_indicator.py")])
         try:
             self.tasks = api("GET", "/api/tasks")
         except Exception:
@@ -221,11 +241,11 @@ class Indicator:
             mins = (s - now).total_seconds() / 60
             n = t.get("notified") or 0
             if not n & 2 and -15 < mins <= 0:
-                notify(f"Starting now: {t['title']}", t["notes"] or "Your meeting is starting.",
+                notify(f"Starting now: {t['title']}", plain(t["notes"]) or "Your meeting is starting.",
                        urgent=True, link=t["link"], sound=True)
                 self.set_notified(t, n | 3)
             elif not n & 1 and 0 < mins <= REMIND_BEFORE_MIN:
-                notify(f"{t['title']} {rel(t)}", f"Starts at {t['time']}" + (f"\n{t['notes']}" if t["notes"] else ""),
+                notify(f"{t['title']} {rel(t)}", f"Starts at {t['time']}" + (f"\n{plain(t['notes'])}" if t["notes"] else ""),
                        link=t["link"], sound=True)
                 self.set_notified(t, n | 1)
         # Morning nudge about unfinished tasks
@@ -280,7 +300,7 @@ class Indicator:
                 mi = Gtk.MenuItem(label=f"📅 {m['time']}  {short(m['title'], 34)}  ·  {rel(m)}")
                 sub = Gtk.Menu()
                 if m["link"]: self.item(sub, "Join meeting", lambda l=m["link"]: subprocess.Popen(["xdg-open", l]))
-                if m["notes"]: self.item(sub, short(m["notes"].replace("\n", " "), 60), sensitive=False)
+                if m["notes"]: self.item(sub, short(plain(m["notes"]), 60), sensitive=False)
                 self.item(sub, "✓ Mark done", lambda i=m["id"]: self.done(i))
                 self.item(sub, "Edit…", lambda tt=m: self.dialog(tt))
                 self.item(sub, "Delete", lambda i=m["id"]: self.delete(i))
@@ -380,7 +400,7 @@ class Indicator:
             self.item(ts, "Delete", lambda i=t["id"]: self.delete(i))
             ti.set_submenu(ts); sub.append(ti)
         self.sep(sub)
-        self.item(sub, "Open in browser", self.open_web)
+        self.item(sub, "Open TaskMate", self.open_web)
         mi.set_submenu(sub)
         return mi
 
@@ -390,7 +410,7 @@ class Indicator:
         sub = Gtk.Menu()
         info = [f"Priority: {PN[t['priority']]}"] + ([f"#{t['project']}"] if t["project"] else [])
         self.item(sub, "   ".join(info), sensitive=False)
-        if t["notes"]: self.item(sub, short(t["notes"].replace("\n", " "), 60), sensitive=False)
+        if t["notes"]: self.item(sub, short(plain(t["notes"]), 60), sensitive=False)
         self.sep(sub)
         self.item(sub, "✓ Mark done", lambda i=t["id"]: self.done(i))
         ids = [x["id"] for x in siblings]
@@ -430,7 +450,11 @@ class Indicator:
         self.act(lambda: api("POST", "/api/reorder", {"ids": ids}))
 
     def open_web(self):
-        subprocess.Popen(["xdg-open", f"http://localhost:{PORT}"])
+        win = os.path.join(APP_DIR, "taskmate_window.py")
+        if os.path.exists(win):
+            subprocess.Popen(["/usr/bin/python3", win], env={**os.environ, "TASKMATE_PORT": str(PORT)})
+        else:
+            subprocess.Popen(["xdg-open", f"http://localhost:{PORT}"])
 
     def start_service(self):
         subprocess.call(["systemctl", "--user", "start", "taskmate.service"])
@@ -472,7 +496,10 @@ class Indicator:
         project.set_text(task["project"] if task else "")
         prio.set_active_id(str(task["priority"] if task else 2))
         link.set_text(task["link"] if task else "")
-        notes.set_text(task["notes"] if task else "")
+        orig_notes = task["notes"] if task else ""
+        notes.set_text(plain(orig_notes))
+        if "<" in orig_notes:
+            notes.set_tooltip_text("These notes have formatting. Edit them in the TaskMate window to keep it.")
 
         rows = [("Type", kind_cb), ("Title", title), ("Date", dbox), ("Time", time_e),
                 ("Project", project), ("Priority", prio), ("Link", link), ("Notes", notes)]
@@ -503,7 +530,9 @@ class Indicator:
             if k == "meeting" and not dd: dd = iso(today())
             body = {"title": title.get_text().strip(), "kind": k, "due": dd, "time": tm,
                     "project": project.get_text().strip(), "priority": int(prio.get_active_id()),
-                    "link": link.get_text().strip() if k == "meeting" else "", "notes": notes.get_text()}
+                    "link": link.get_text().strip() if k == "meeting" else "",
+                    # Keep formatted notes as they are unless the text was changed here
+                    "notes": orig_notes if notes.get_text() == plain(orig_notes) else notes.get_text()}
             if task: self.act(lambda: api("PUT", f"/api/tasks/{task['id']}", body))
             else: self.act(lambda: api("POST", "/api/tasks", body))
             break

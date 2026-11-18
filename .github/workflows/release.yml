@@ -15,7 +15,7 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           mkdir -p dist/taskmate
-          cp README.md taskmate.py page.html taskmate_indicator.py taskmate_update.py icon.svg install.sh uninstall.sh dist/taskmate/
+          cp README.md taskmate.py page.html taskmate_indicator.py taskmate_update.py taskmate_window.py icon.svg icon-app.svg install.sh uninstall.sh dist/taskmate/
           echo "$VER" > dist/taskmate/VERSION
           tar -C dist -czf taskmate.tar.gz taskmate
       - name: Publish release

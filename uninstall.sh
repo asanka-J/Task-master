@@ -6,4 +6,4 @@ rm -f "$HOME/.config/autostart/taskmate-indicator.desktop" "$HOME/.local/share/t
 rm -f "$HOME/.config/systemd/user/taskmate.service" "$HOME/.local/share/applications/taskmate.desktop"
 systemctl --user daemon-reload
 if [ "$1" = "--purge" ]; then rm -rf "$HOME/.local/share/taskmate"; echo "Removed TaskMate and all tasks."
-else rm -f "$HOME/.local/share/taskmate/taskmate.py" "$HOME/.local/share/taskmate/page.html" "$HOME/.local/share/taskmate/taskmate_update.py"; echo "Removed TaskMate. Tasks kept in ~/.local/share/taskmate/tasks.db"; fi
+else rm -f "$HOME/.local/share/taskmate/taskmate.py" "$HOME/.local/share/taskmate/page.html" "$HOME/.local/share/taskmate/taskmate_update.py" "$HOME/.local/share/taskmate/taskmate_window.py" "$HOME/.local/share/taskmate/icon-app.svg"; echo "Removed TaskMate. Tasks kept in ~/.local/share/taskmate/tasks.db"; fi
